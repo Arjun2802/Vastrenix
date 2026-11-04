@@ -1,0 +1,16 @@
+{
+  "appId": "com.vastrenix.app",
+  "appName": "Vastrenix",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "backgroundColor": "#0E0E12"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "backgroundColor": "#0E0E12"
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "hosting": {
+    "public": "www",
+    "ignore": [
+      "**/README.txt"
+    ]
+  }
+}

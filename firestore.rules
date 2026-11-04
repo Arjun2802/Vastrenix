@@ -1,0 +1,78 @@
+rules_version = '2';
+// Vastrenix security rules.
+// Each store lives under /stores/{ownerUid}. Only the owner and approved (active) staff can read or write it.
+// Staff approval, roles, access requests, and 7-day trial subscription enforcement are handled here.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+
+    match /users/{uid} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    // Store codes let staff find a store to join.
+    match /codes/{code} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.storeId == request.auth.uid;
+      allow update, delete: if signedIn() && resource.data.storeId == request.auth.uid;
+    }
+
+    // Subscriptions: owners manage their store subscription.
+    match /subscriptions/{sid} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && (request.auth.uid == sid || resource.data.businessId == request.auth.uid);
+      allow delete: if false;
+    }
+
+    // Support Requests: logged-in users file tickets or custom work inquiries.
+    match /supportRequests/{id} {
+      allow create: if signedIn();
+      allow read: if signedIn() && (resource.data.businessId == request.auth.uid || resource.data.email == request.auth.token.email);
+      allow update, delete: if false;
+    }
+
+    match /stores/{sid} {
+      function isOwner() { return signedIn() && request.auth.uid == sid; }
+      function staffPath() { return /databases/$(database)/documents/stores/$(sid)/staff/$(request.auth.uid); }
+      function isStaff() { return signedIn() && exists(staffPath()) && get(staffPath()).data.status == 'active'; }
+      function role() { return get(staffPath()).data.role; }
+      function isAdmin() { return isOwner() || (isStaff() && role() == 'admin'); }
+      function subDoc() { return /databases/$(database)/documents/stores/$(sid)/meta/subscription; }
+      function isTrialExpired() {
+        return exists(subDoc()) &&
+               get(subDoc()).data.status == 'trialing' &&
+               request.time.toMillis() > get(subDoc()).data.trialEndsAt;
+      }
+      function canWrite() {
+        return (isOwner() || (isStaff() && role() != 'auditor')) && !isTrialExpired();
+      }
+
+      // Everything in the store (products, ledger, customers, orders, shifts, ...)
+      match /{coll}/{docId} {
+        allow read: if (isOwner() || isStaff()) && coll != 'requests';
+        allow write: if canWrite() && !(coll in ['staff', 'requests']) && !(coll == 'meta' && docId == 'store');
+      }
+      // Store profile: anyone signed in can read it; only admins change it.
+      match /meta/store {
+        allow read: if signedIn();
+        allow write: if isAdmin();
+      }
+      // Subscription document inside store
+      match /meta/subscription {
+        allow read: if isOwner() || isStaff();
+        allow write: if isAdmin();
+      }
+      // Team: only owner/admins approve, change roles or deactivate.
+      match /staff/{uid} {
+        allow read: if isOwner() || isStaff() || (signedIn() && request.auth.uid == uid);
+        allow write: if isAdmin();
+      }
+      // Access requests: a person may file their own (status pending); admins decide.
+      match /requests/{uid} {
+        allow read: if isAdmin() || (signedIn() && request.auth.uid == uid);
+        allow create, update: if isAdmin() || (signedIn() && request.auth.uid == uid && request.resource.data.status == 'pending');
+        allow delete: if isAdmin();
+      }
+    }
+  }
+}

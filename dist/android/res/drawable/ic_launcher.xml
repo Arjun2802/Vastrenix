@@ -1,0 +1,31 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Dark Graphite Background Squircle (#0E0E12) -->
+    <path
+        android:fillColor="#0E0E12"
+        android:pathData="M16,6h76a10,10 0 0 1 10,10v76a10,10 0 0 1 -10,10h-76a10,10 0 0 1 -10,-10v-76a10,10 0 0 1 10,-10z" />
+
+    <!-- White Warp V -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="5.6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M38.5,39.0 L54.0,69.5 L69.5,39.0" />
+
+    <!-- Vastra Violet Weft Thread (#5B3DF5) woven across V -->
+    <path
+        android:strokeColor="#5B3DF5"
+        android:strokeWidth="4.0"
+        android:strokeLineCap="round"
+        android:pathData="M32.0,51.5 L59.8,51.5" />
+    <path
+        android:strokeColor="#5B3DF5"
+        android:strokeWidth="4.0"
+        android:strokeLineCap="round"
+        android:pathData="M66.8,51.5 L76.0,51.5" />
+</vector>

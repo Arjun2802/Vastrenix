@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "753186933692",
+    "project_id": "vastranix",
+    "storage_bucket": "vastranix.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:753186933692:android:58fe3fc892d516db39b9b9",
+        "android_client_info": {
+          "package_name": "com.vastranix.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCz9IXWXsC2pdmvh0Tr4h4Mk6UFLe3hUMk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="graphite">#0E0E12</color>
+    <color name="vastra_violet">#5B3DF5</color>
+    <color name="mist">#F6F6F8</color>
+    <color name="paper">#FFFFFF</color>
+    <color name="paid_green">#0E7C58</color>
+    <color name="due_amber">#A35A00</color>
+    <color name="risk_red">#C8283C</color>
+    <color name="ic_launcher_background">#0E0E12</color>
+</resources>

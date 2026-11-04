@@ -1,0 +1,30 @@
+{
+  "name": "vastrenix",
+  "version": "2.4.0",
+  "private": true,
+  "description": "Vastrenix \u2014 retail, wholesale and dealer management for clothing stores",
+  "scripts": {
+    "vendor": "node scripts/vendor.js",
+    "serve": "npx --yes http-server www -p 8080 -c-1",
+    "android:add": "npx cap add android",
+    "android:icons": "npx capacitor-assets generate --android --assetPath assets",
+    "android:sync": "npm run vendor && npx cap sync android",
+    "android:open": "npx cap open android",
+    "apk": "npm run android:sync && cd android && ./gradlew assembleDebug"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/app": "^6.0.1",
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/filesystem": "^6.0.1",
+    "@capacitor/share": "^6.0.2",
+    "firebase": "^10.14.1",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^2.5.2",
+    "qrcode-generator": "^1.4.4"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^6.2.0"
+  }
+}
