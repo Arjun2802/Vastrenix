@@ -3,41 +3,92 @@ var DO_FLOW = ['submitted', 'accepted', 'packed', 'dispatched', 'delivered', 'cl
 function doStatus(o) { return { submitted: [t('st_new', 'New'), 'acc'], accepted: [t('st_accepted', 'Accepted'), 'warn'], partial: [t('st_partial_acc', 'Partly accepted'), 'warn'], packed: [t('st_packed', 'Packed'), 'warn'], dispatched: [t('st_dispatched', 'Dispatched'), 'ok'], delivered: [t('st_delivered', 'Delivered'), 'ok'], closed: [t('st_closed', 'Closed'), ''], rejected: [t('st_rejected', 'Rejected'), 'bad'] }[o.status] || [o.status, '']; }
 function doLoc() { var g = locs().find(function (l) { return l.type === 'godown'; }); return g ? g.id : curLoc(); }
 function doStep(o) { var s = o.status === 'partial' ? 'accepted' : o.status; return s === 'rejected' ? 1 : DO_FLOW.indexOf(s) + 1; }
+
 function vDealers() {
-  var tab = S.q.dlTab || 'orders';
-  if (tab === 'network') return ph(t('nav_dealers', 'Dealers'), '', can('dealers') ? '<button class="btn primary sm" data-a="sheet" data-k="dealer">' + icon('plus', 16, 2.2) + esc(t('add_dealer', 'Add dealer')) + '</button>' : '') + '<div class="stack lg" style="max-width:860px">' + seg('q.dlTab', [['orders', t('dealer_orders', 'Orders')], ['network', t('network', 'Network')]]) + networkBody() + '</div>';
-  var all = vals(D.dorders).sort(by(function (o) { return o.createdAt; }, true));
-  var f = S.q.doF || 'submitted';
-  var grp = { submitted: ['submitted'], accepted: ['accepted', 'partial'], packed: ['packed'], dispatched: ['dispatched'], done: ['delivered', 'closed', 'rejected'] };
-  var cnt = function (k) { return all.filter(function (o) { return grp[k].indexOf(o.status) >= 0; }).length; };
-  var list = all.filter(function (o) { return grp[f].indexOf(o.status) >= 0; });
-  var body = !D.loaded.dorders ? skelRows(4) : !list.length ? '<div class="card">' + empty('truck', t('no_do', 'No orders here'), f === 'submitted' ? t('no_do_b', 'Record an order when a dealer sends one by phone or WhatsApp.') : '') + '</div>' :
-    list.map(function (o) {
-      var dl = D.dealers[o.dealerId], stt = doStatus(o), step = doStep(o), units = sum(o.lines, function (l) { return o.status === 'submitted' ? l.qty : (+l.acc || 0); });
-      return '<section class="card pad stack"><button class="rowx" style="border:0;background:none;padding:0;text-align:left" data-a="openDO" data-id="' + esc(o.id) + '">' + avatarHtml(dl ? dl.name : '?', '') + '<span class="grow" style="min-width:0"><b style="display:block">' + esc(dl ? dl.name : t('dealer', 'Dealer')) + '</b><span class="xsmall muted num">' + esc(o.no + ' · ' + t('n_pcs', '{n} pcs', { n: units }) + (dl && dl.city ? ' · ' + dl.city : '')) + '</span></span><span class="end" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px"><b class="num">' + inr(o.total) + '</b>' + pill(stt[0], stt[1]) + '</span></button>' +
+  startDealerOrderListeners();
+  var tab = S.q.dlTab || 'incoming';
+  if (tab === 'network') return ph(t('nav_dealers', 'Dealers'), '', can('dealers') ? '<button class="btn primary sm" data-a="sheet" data-k="dealer">' + icon('plus', 16, 2.2) + esc(t('add_dealer', 'Add dealer')) + '</button>' : '') + '<div class="stack lg" style="max-width:860px">' + seg('q.dlTab', [['incoming', t('incoming_orders', 'Incoming Orders')], ['outgoing', t('outgoing_orders', 'Outgoing Orders')], ['network', t('network', 'Network')]]) + networkBody() + '</div>';
+
+  var bid = currentBusinessId();
+  var isIncoming = tab === 'incoming';
+  var allOrders = vals(D.dorders).sort(by(function (o) { return o.createdAt; }, true));
+
+  var list = allOrders.filter(function (o) {
+    if (isIncoming) return o.sellerBusinessId === bid || (!o.sellerBusinessId && !o.buyerBusinessId);
+    return o.buyerBusinessId === bid;
+  });
+
+  var f = S.q.doF || (isIncoming ? 'submitted' : 'all');
+  var grp = isIncoming
+    ? { submitted: ['submitted'], accepted: ['accepted', 'partial'], packed: ['packed'], dispatched: ['dispatched'], done: ['delivered', 'closed', 'rejected'] }
+    : { all: ['submitted', 'accepted', 'partial', 'packed', 'dispatched', 'delivered', 'closed', 'rejected'], submitted: ['submitted'], accepted: ['accepted', 'partial', 'packed'], dispatched: ['dispatched'], done: ['delivered', 'closed'] };
+
+  var cnt = function (k) { return list.filter(function (o) { return grp[k].indexOf(o.status) >= 0; }).length; };
+  var filtered = f === 'all' ? list : list.filter(function (o) { return grp[f] && grp[f].indexOf(o.status) >= 0; });
+
+  var chipsArr = isIncoming
+    ? [['submitted', t('st_new', 'New'), cnt('submitted')], ['accepted', t('to_pack', 'To pack'), cnt('accepted')], ['packed', t('st_packed', 'Packed'), cnt('packed')], ['dispatched', t('st_dispatched', 'Dispatched'), cnt('dispatched')], ['done', t('done_lc', 'Done'), cnt('done')]]
+    : [['all', t('all', 'All'), list.length], ['submitted', t('st_new', 'Pending'), cnt('submitted')], ['accepted', t('st_accepted', 'Accepted'), cnt('accepted')], ['dispatched', t('st_dispatched', 'In transit'), cnt('dispatched')], ['done', t('done_lc', 'Received'), cnt('done')]];
+
+  var emptyTxt = isIncoming
+    ? (f === 'submitted' ? t('no_incoming_do_b', 'New orders from dealers will arrive here live in real time.') : t('no_do', 'No orders here'))
+    : t('no_outgoing_do_b', 'Place orders to your wholesalers and track fulfillment live.');
+
+  var headBtn = can('dealers')
+    ? (isIncoming
+        ? '<button class="btn primary sm" data-a="newDO">' + icon('plus', 16, 2.2) + esc(t('record_order', 'Record order')) + '</button>'
+        : '<button class="btn primary sm" data-a="newOutgoingDO">' + icon('plus', 16, 2.2) + esc(t('place_order', 'Place order')) + '</button>')
+    : '';
+
+  var body = !D.loaded.dorders ? skelRows(4) : !filtered.length ? '<div class="card">' + empty('truck', t('no_do', 'No orders here'), emptyTxt) + '</div>' :
+    filtered.map(function (o) {
+      var isBuyer = o.buyerBusinessId === bid;
+      var otherName = isBuyer ? (o.sellerName || 'Seller') : (o.buyerName || (D.dealers[o.dealerId] && D.dealers[o.dealerId].name) || 'Buyer');
+      var dl = D.dealers[o.dealerId];
+      var stt = doStatus(o), step = doStep(o), units = sum(o.lines, function (l) { return o.status === 'submitted' ? l.qty : (+l.acc || 0); });
+      var quickAction = '';
+      if (!isBuyer && o.status === 'submitted' && can('dealers')) {
+        quickAction = '<div class="rowx"><button class="btn line sm" data-a="openDO" data-id="' + esc(o.id) + '">' + esc(t('review', 'Review')) + '</button>' + busyBtn(t('accept_avail', 'Accept available'), 'acceptDO', 'primary sm grow', 'data-id="' + esc(o.id) + '" data-all="1"', 'do') + '</div>';
+      } else if (isBuyer && o.status === 'dispatched' && can('dealers')) {
+        quickAction = '<div class="rowx"><button class="btn primary sm grow" data-a="sheet" data-k="deliverDO" data-id="' + esc(o.id) + '">' + icon('package', 15) + esc(t('confirm_receipt', 'Confirm receipt & add to stock')) + '</button></div>';
+      }
+
+      return '<section class="card pad stack"><button class="rowx" style="border:0;background:none;padding:0;text-align:left" data-a="openDO" data-id="' + esc(o.id) + '">' + avatarHtml(otherName, '') + '<span class="grow" style="min-width:0"><b style="display:block">' + esc(otherName) + '</b><span class="xsmall muted num">' + esc(o.no + ' · ' + t('n_pcs', '{n} pcs', { n: units }) + (isBuyer ? ' · ' + t('role_supplier', 'Supplier') : (dl && dl.city ? ' · ' + dl.city : ''))) + '</span></span><span class="end" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px"><b class="num">' + inr(o.total) + '</b>' + pill(stt[0], stt[1]) + '</span></button>' +
         '<div aria-hidden="true" style="display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px">' + DO_FLOW.map(function (s, i) { return '<span style="height:4px;border-radius:999px;background:' + (o.status === 'rejected' ? (i === 0 ? 'var(--bad-solid)' : 'var(--line)') : i < step ? 'var(--strong)' : 'var(--line)') + '"></span>'; }).join('') + '</div>' +
-        (o.status === 'submitted' && can('dealers') ? '<div class="rowx"><button class="btn line sm" data-a="openDO" data-id="' + esc(o.id) + '">' + esc(t('review', 'Review')) + '</button>' + busyBtn(t('accept_avail', 'Accept available'), 'acceptDO', 'primary sm grow', 'data-id="' + esc(o.id) + '" data-all="1"', 'do') + '</div>' : '') +
-        (o.assignee ? '<span class="rowx xsmall muted">' + avatarHtml(who(o.assignee)).replace('class="ic round acc"', 'class="ic round acc" style="width:22px;height:22px;font-size:10px"') + esc(t('assigned_to', 'Assigned to {n}', { n: who(o.assignee) }) + (o.lr ? ' · LR ' + o.lr : '')) + '</span>' : '') + '</section>';
+        quickAction +
+        (o.carrier && o.lr ? '<span class="rowx xsmall muted">' + icon('truck', 14) + esc(o.carrier + ' · LR ' + o.lr) + '</span>' : '') +
+        (o.assignee ? '<span class="rowx xsmall muted">' + avatarHtml(who(o.assignee)).replace('class="ic round acc"', 'class="ic round acc" style="width:22px;height:22px;font-size:10px"') + esc(t('assigned_to', 'Assigned to {n}', { n: who(o.assignee) })) + '</span>' : '') + '</section>';
     }).join('');
-  return ph(t('nav_dealers', 'Dealers'), esc(t('do_sub', 'Stock is reserved on acceptance and leaves on dispatch')), can('dealers') ? '<button class="btn primary sm" data-a="newDO">' + icon('plus', 16, 2.2) + esc(t('record_order', 'Record order')) + '</button>' : '') +
-    '<div class="stack lg" style="max-width:860px">' + seg('q.dlTab', [['orders', t('dealer_orders', 'Orders')], ['network', t('network', 'Network')]]) + chips('q.doF', [['submitted', t('st_new', 'New'), cnt('submitted')], ['accepted', t('to_pack', 'To pack'), cnt('accepted')], ['packed', t('st_packed', 'Packed'), cnt('packed')], ['dispatched', t('st_dispatched', 'Dispatched'), cnt('dispatched')], ['done', t('done_lc', 'Done'), cnt('done')]]) + body + '</div>';
+
+  return ph(t('nav_dealers', 'Dealers'), esc(isIncoming ? t('do_sub', 'Stock is reserved on acceptance and leaves on dispatch') : t('do_out_sub', 'Live B2B orders with your connected dealers and suppliers')), headBtn) +
+    '<div class="stack lg" style="max-width:860px">' + seg('q.dlTab', [['incoming', t('incoming_orders', 'Incoming Orders')], ['outgoing', t('outgoing_orders', 'Outgoing Orders')], ['network', t('network', 'Network')]]) + chips('q.doF', chipsArr) + body + '</div>';
 }
+
 function networkBody() {
   var st = storeV(), ds = vals(D.dealers), pend = ds.filter(function (d) { return d.status === 'pending'; }), con = ds.filter(function (d) { return d.status === 'connected'; }).sort(by(function (d) { return d.name; }));
   return '<section class="hero"><div class="between"><div class="stack sm" style="gap:4px"><span class="lab">' + esc(t('biz_code', 'Your business code')) + '</span><span style="font-size:26px;font-weight:700;letter-spacing:.06em">' + esc(st.code || '—') + '</span></div><span class="chipd">' + icon('network', 16) + '</span></div><p style="font-size:13px;color:var(--hero-muted);line-height:1.5">' + esc(t('code_b', 'Dealers quote this code when they place orders. Each connected dealer gets the price tier you assign.')) + '</p><button class="btn" style="background:#fff;color:#0E0E12;align-self:flex-start" data-a="copy" data-v="' + esc(st.code || '') + '">' + icon('copy', 16) + esc(t('copy_code', 'Copy code')) + '</button></section>' +
     (pend.length ? '<div class="sect"><h2>' + esc(t('requests_n', 'Requests · {n}', { n: pend.length })) + '</h2></div><div class="list">' + pend.map(function (d) { return '<div class="li">' + avatarHtml(d.name, '') + '<span class="tx"><b>' + esc(d.name) + '</b><small>' + esc((d.city || '') + ' · ' + t('wants_tier', 'wants {t} access', { t: tierName(d.tier) })) + '</small></span>' + (can('dealers') ? '<button class="ib" data-a="dealerStatus" data-id="' + esc(d.id) + '" data-v="declined" aria-label="' + esc(t('decline', 'Decline')) + '">' + icon('x', 16) + '</button><button class="ib dark" data-a="dealerStatus" data-id="' + esc(d.id) + '" data-v="connected" aria-label="' + esc(t('approve', 'Approve')) + '">' + icon('check', 16, 2.4) + '</button>' : '') + '</div>'; }).join('') + '</div>' : '') +
-    '<div class="sect"><h2>' + esc(t('connected_n', 'Connected · {n}', { n: con.length })) + '</h2></div>' + (con.length ? '<div class="list">' + con.map(function (d) { var n = vals(D.dorders).filter(function (o) { return o.dealerId === d.id; }).length; return '<button class="li" data-a="sheet" data-k="dealer" data-id="' + esc(d.id) + '">' + avatarHtml(d.name, '') + '<span class="tx"><b>' + esc(d.name) + '</b><small>' + esc([d.city, t('n_orders', '{n} orders', { n: n }), (+d.balance || 0) > 0.5 ? t('owes', 'owes {amt}', { amt: inr(d.balance) }) : ''].filter(Boolean).join(' · ')) + '</small></span>' + pill(tierName(d.tier), 'acc') + '</button>'; }).join('') + '</div>' : '<div class="card">' + empty('network', t('no_dealers', 'No dealers connected'), t('no_dealers_b', 'Add the shops and wholesalers who buy from you.')) + '</div>');
+    '<div class="sect"><h2>' + esc(t('connected_n', 'Connected · {n}', { n: con.length })) + '</h2></div>' + (con.length ? '<div class="list">' + con.map(function (d) { var n = vals(D.dorders).filter(function (o) { return o.dealerId === d.id || o.buyerBusinessId === d.businessId || o.sellerBusinessId === d.businessId; }).length; return '<button class="li" data-a="sheet" data-k="dealer" data-id="' + esc(d.id) + '">' + avatarHtml(d.name, '') + '<span class="tx"><b>' + esc(d.name) + '</b><small>' + esc([d.city, d.code ? 'Code ' + d.code : '', t('n_orders', '{n} orders', { n: n }), (+d.balance || 0) > 0.5 ? t('owes', 'owes {amt}', { amt: inr(d.balance) }) : ''].filter(Boolean).join(' · ')) + '</small></span>' + pill(tierName(d.tier), 'acc') + '</button>'; }).join('') + '</div>' : '<div class="card">' + empty('network', t('no_dealers', 'No dealers connected'), t('no_dealers_b', 'Add the shops and wholesalers who buy from you.')) + '</div>');
 }
 function tierName(x) { return x === 'wholesale' ? t('tier_wholesale', 'Wholesale') : t('tier_dealer', 'Dealer'); }
 A.dealerStatus = async function (d) { var ok = await tx('dl', async function () { var o = await fresh('dealers/' + d.id); o.status = d.v; o.decidedAt = Date.now(); await put('dealers/' + d.id, o); return 1; }); if (ok) toast(d.v === 'connected' ? t('dealer_ok', 'Dealer connected') : t('dealer_no', 'Request declined')); };
 function dealerSheet(sh) {
-  if (!S.f.dl || S.f.dl.id !== (sh.id || null)) { var o = sh.id ? D.dealers[sh.id] : null; S.f.dl = { id: sh.id || null, name: o ? o.name : '', city: o ? o.city || '' : '', phone: o ? o.phone || '' : '', gstin: o ? o.gstin || '' : '', tier: o ? o.tier || 'dealer' : 'dealer', err: {} }; }
+  if (!S.f.dl || S.f.dl.id !== (sh.id || null)) { var o = sh.id ? D.dealers[sh.id] : null; S.f.dl = { id: sh.id || null, name: o ? o.name : '', code: o ? o.code || '' : '', businessId: o ? o.businessId || '' : '', city: o ? o.city || '' : '', phone: o ? o.phone || '' : '', gstin: o ? o.gstin || '' : '', tier: o ? o.tier || 'dealer' : 'dealer', err: {} }; }
   var f = S.f.dl;
-  return sheetWrap(f.id ? t('edit_dealer', 'Edit dealer') : t('add_dealer', 'Add dealer'), txtF(t('biz_name', 'Business name'), 'f.dl.name', '', null, f.err.name) + '<div class="g2">' + txtF(t('city', 'City'), 'f.dl.city') + txtF(t('phone', 'Phone'), 'f.dl.phone', 'inputmode="tel"') + '</div>' + txtF(t('gstin', 'GSTIN'), 'f.dl.gstin', 'autocapitalize="characters" maxlength="15"', t('optional', 'Optional')) + fld(t('price_tier', 'Price tier'), seg('f.dl.tier', [['dealer', t('tier_dealer', 'Dealer')], ['wholesale', t('tier_wholesale', 'Wholesale')]])), (f.id && can('dealers') ? '<button class="btn line" data-a="newDO" data-did="' + esc(f.id) + '">' + esc(t('record_order', 'Record order')) + '</button>' : '') + busyBtn(t('save', 'Save'), 'saveDealer', 'primary', '', 'dl'));
+  return sheetWrap(f.id ? t('edit_dealer', 'Edit dealer') : t('add_dealer', 'Add dealer'), txtF(t('biz_name', 'Business name'), 'f.dl.name', '', null, f.err.name) + txtF(t('store_code', 'Store / Business code'), 'f.dl.code', 'placeholder="VX-MHL-5678" autocapitalize="characters"', t('code_sync_hint', 'Enter their Vastrenix code for live dealer-to-dealer sync')) + '<div class="g2">' + txtF(t('city', 'City'), 'f.dl.city') + txtF(t('phone', 'Phone'), 'f.dl.phone', 'inputmode="tel"') + '</div>' + txtF(t('gstin', 'GSTIN'), 'f.dl.gstin', 'autocapitalize="characters" maxlength="15"', t('optional', 'Optional')) + fld(t('price_tier', 'Price tier'), seg('f.dl.tier', [['dealer', t('tier_dealer', 'Dealer')], ['wholesale', t('tier_wholesale', 'Wholesale')]])), (f.id && can('dealers') ? '<button class="btn line" data-a="newDO" data-did="' + esc(f.id) + '">' + esc(t('record_order', 'Record order')) + '</button>' : '') + busyBtn(t('save', 'Save'), 'saveDealer', 'primary', '', 'dl'));
 }
 A.saveDealer = async function () {
   var f = S.f.dl; f.err = {}; if (!String(f.name).trim()) { f.err.name = t('err_name', 'Enter a name'); schedule(); return; }
-  var ok = await tx('dl', async function () { var id = f.id || uid('d'); var o = (f.id && await fresh('dealers/' + f.id)) || { balance: 0, txns: [], status: 'connected', createdAt: Date.now() }; Object.assign(o, { name: f.name.trim(), city: String(f.city || '').trim(), phone: phoneDigits(f.phone), gstin: String(f.gstin || '').toUpperCase(), tier: f.tier }); await put('dealers/' + id, o); return 1; });
+  var code = String(f.code || '').trim().toUpperCase();
+  var bizId = f.businessId || '';
+  if (code && !bizId) {
+    if (window.FS) {
+      try { var cs = await window.FS.doc('codes/' + code).get(); if (cs.exists) bizId = cs.data().storeId || ''; } catch (e) {}
+    } else if (DB && DB.local) {
+      try { var cs = await DB.doc('codes/' + code).get(); if (cs && cs.exists) bizId = cs.data().storeId || ''; } catch (e) {}
+    }
+  }
+  var ok = await tx('dl', async function () { var id = f.id || uid('d'); var o = (f.id && await fresh('dealers/' + f.id)) || { balance: 0, txns: [], status: 'connected', createdAt: Date.now() }; Object.assign(o, { name: f.name.trim(), code: code, businessId: bizId || o.businessId || '', city: String(f.city || '').trim(), phone: phoneDigits(f.phone), gstin: String(f.gstin || '').toUpperCase(), tier: f.tier }); await put('dealers/' + id, o); return 1; });
   if (ok) { S.f.dl = null; closeSheet(); toast(t('saved', 'Saved')); }
 };
 A.openDO = function (d) { openSub('dorder', { id: d.id }); };
@@ -61,76 +112,191 @@ A.doRm = function (d) { S.f.do.lines.splice(+d.i, 1); schedule(); };
 A.saveDO = async function () {
   var f = S.f.do; f.lines = f.lines.filter(function (l) { return +l.qty > 0; }).map(function (l) { l.qty = Math.round(+l.qty); return l; });
   var c = VXC.calcBill(f.lines, { incl: storeV().priceIncl !== false });
-  var id = await tx('do', async function () { var no = 'DO-' + VXC.pad(await nextNo('do'), 4), id = uid('o'), now = Date.now(); await put('dorders/' + id, { no: no, dealerId: f.dealerId, lines: f.lines, status: 'submitted', total: c.grand, note: f.note || '', createdAt: now, by: ME.id || '', timeline: [{ s: 'submitted', at: now, by: ME.id || '' }] }); return id; });
-  if (id) { S.f.do = null; toast(t('do_saved', 'Order recorded')); S.sub = { k: 'dorder', id: id, prev: null }; schedule(); }
+  var dl = D.dealers[f.dealerId];
+  var bid = currentBusinessId(), st = storeV(), now = Date.now(), id = uid('o');
+  var no = 'DO-' + VXC.pad(await nextNo('do'), 4);
+  var buyerBid = (dl && (dl.businessId || dl.id)) || f.dealerId;
+  var orderDoc = {
+    id: id, no: no,
+    sellerBusinessId: bid, sellerStoreCode: st.code || '', sellerName: st.name || 'Seller', sellerPhone: st.phone || '',
+    buyerBusinessId: buyerBid, buyerStoreCode: (dl && dl.code) || '', buyerName: (dl && dl.name) || 'Dealer', buyerPhone: (dl && dl.phone) || '',
+    dealerId: f.dealerId, lines: f.lines, status: 'submitted', total: c.grand, note: f.note || '',
+    createdAt: now, updatedAt: now, by: ME.id || '', lastActionBy: 'seller',
+    timeline: [{ s: 'submitted', at: now, by: ME.id || '', note: t('tl_sub', 'Order received') }]
+  };
+  var savedId = await tx('do', async function () { await putDO(id, orderDoc); return id; });
+  if (savedId) { S.f.do = null; toast(t('do_saved', 'Order recorded')); S.sub = { k: 'dorder', id: savedId, prev: null }; schedule(); }
 };
+
+A.newOutgoingDO = function () {
+  var ds = vals(D.dealers).filter(function (x) { return x.status === 'connected'; });
+  S.f.doOut = { sellerDealerId: ds[0] ? ds[0].id : '', lines: [], q: '', note: '' };
+  openSub('doOutForm', {});
+};
+function subDOOutgoingForm() {
+  var f = S.f.doOut; if (!f) return ph(t('place_order', 'Place order'), '', '', 'back');
+  var ds = vals(D.dealers).filter(function (x) { return x.status === 'connected'; }).sort(by(function (x) { return x.name; }));
+  f.lines.forEach(function (l) { var p = D.products[l.pid]; if (p && !l.manual) l.rate = tierPrice(p, 'dealer'); });
+  var c = VXC.calcBill(f.lines, { incl: true });
+  if (!ds.length) return ph(t('place_order', 'Place order'), '', '', 'back', true) + '<div class="card">' + empty('network', t('no_dealers', 'No suppliers / wholesalers connected'), t('no_dealers_b', 'Add the wholesalers and dealers you buy from.'), '<button class="btn primary sm" data-a="sheet" data-k="dealer">' + esc(t('add_dealer', 'Add dealer')) + '</button>') + '</div>';
+  return ph(t('place_dealer_order', 'Place order to supplier / wholesaler'), '', '', 'back', true) + '<div class="stack lg" style="max-width:820px"><section class="card pad">' + selF(t('supplier_dealer', 'Order to (Seller)'), 'f.doOut.sellerDealerId', ds.map(function (x) { return [x.id, x.name + (x.city ? ' · ' + x.city : '') + (x.code ? ' (' + x.code + ')' : '')]; })) + '</section>' +
+    '<section class="card pad stack"><b>' + esc(t('items', 'Items')) + '</b>' + lineSearch('f.doOut.q', 'doOutAdd') +
+    (f.lines.length ? '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>' + esc(t('item', 'Item')) + '</th><th class="r">' + esc(t('qty', 'Qty')) + '</th><th class="r">' + esc(t('price_each', 'Estimated price')) + '</th><th class="r">' + esc(t('amount', 'Amount')) + '</th><th></th></tr></thead><tbody>' + f.lines.map(function (l, i) { return '<tr><td><b>' + esc(l.name) + '</b><div class="xsmall muted">' + esc(l.label) + '</div></td><td class="r"><input class="in" id="f-dool-q-' + i + '" data-m="f.doOut.lines.' + i + '.qty" data-num data-r inputmode="numeric" value="' + esc(l.qty) + '" aria-label="' + esc(t('qty', 'Qty')) + '"></td><td class="r">' + inr(l.rate) + '</td><td class="r b">' + inr(l.qty * l.rate) + '</td><td><button class="ib plain" data-a="doOutRm" data-i="' + i + '" aria-label="' + esc(t('remove', 'Remove')) + '">' + icon('trash', 16) + '</button></td></tr>'; }).join('') + '</tbody></table></div>' : '') +
+    '<div class="sumrow tot"><span>' + esc(t('order_total_est', 'Estimated order total')) + '</span><span>' + inr(c.grand) + '</span></div></section>' + txtF(t('note', 'Note for seller'), 'f.doOut.note', 'placeholder="' + esc(t('do_out_ph', 'Urgent dispatch required via Mahavir or VRL Logistics')) + '"') +
+    '<div class="rowx" style="justify-content:flex-end">' + busyBtn(t('send_order_to_seller', 'Send order to seller'), 'saveOutgoingDO', 'primary lg', f.lines.length && f.sellerDealerId ? '' : 'disabled', 'do') + '</div></div>';
+}
+A.doOutAdd = function (d) { var f = S.f.doOut, p = D.products[d.pid], v = p && p.variants.find(function (x) { return x.id === d.vid; }); if (!v) return; var ex = f.lines.find(function (l) { return l.vid === v.id; }); if (ex) ex.qty += 5; else f.lines.push({ pid: p.id, vid: v.id, name: p.name, label: variantLabel(v), sku: v.sku, hsn: p.hsn || '', gst: +p.gst || 0, qty: 10, rate: tierPrice(p, 'dealer'), acc: 0 }); f.q = ''; schedule(); };
+A.doOutRm = function (d) { S.f.doOut.lines.splice(+d.i, 1); schedule(); };
+A.saveOutgoingDO = async function () {
+  var f = S.f.doOut; f.lines = f.lines.filter(function (l) { return +l.qty > 0; }).map(function (l) { l.qty = Math.round(+l.qty); return l; });
+  if (!f.lines.length) return;
+  var dl = D.dealers[f.sellerDealerId];
+  var c = VXC.calcBill(f.lines, { incl: true });
+  var bid = currentBusinessId(), st = storeV(), now = Date.now(), id = uid('o');
+  var no = 'ORD-' + VXC.pad(await nextNo('do'), 4);
+  var sellerBid = (dl && (dl.businessId || dl.targetBizId || dl.id)) || 'seller';
+  var orderDoc = {
+    id: id, no: no,
+    buyerBusinessId: bid, buyerStoreCode: st.code || '', buyerName: st.name || 'Store', buyerPhone: st.phone || '',
+    sellerBusinessId: sellerBid, sellerStoreCode: (dl && dl.code) || '', sellerName: (dl && dl.name) || 'Supplier', sellerPhone: (dl && dl.phone) || '',
+    lines: f.lines, status: 'submitted', total: c.grand, note: f.note || '',
+    createdAt: now, updatedAt: now, by: ME.id || '', lastActionBy: 'buyer',
+    timeline: [{ s: 'submitted', at: now, by: ME.id || '', note: t('tl_sub_b', 'Order placed by buyer') }]
+  };
+  var savedId = await tx('do', async function () { await putDO(id, orderDoc); return id; });
+  if (savedId) { S.f.doOut = null; toast(t('order_submitted', 'Order submitted to {s}', { s: (dl && dl.name) || 'Seller' })); S.sub = { k: 'dorder', id: savedId, prev: null }; schedule(); }
+};
+
 function subDO(sub) {
   var o = D.dorders[sub.id]; if (!o) return ph(t('not_found', 'Not found'), '', '', 'back') + skelRows(2);
+  var bid = currentBusinessId();
+  var isSeller = o.sellerBusinessId === bid || (!o.sellerBusinessId && !o.buyerBusinessId);
+  var isBuyer = o.buyerBusinessId === bid;
+  var otherName = isBuyer ? (o.sellerName || 'Seller') : (o.buyerName || (D.dealers[o.dealerId] && D.dealers[o.dealerId].name) || 'Buyer');
+  var otherPhone = isBuyer ? o.sellerPhone : (o.buyerPhone || (D.dealers[o.dealerId] && D.dealers[o.dealerId].phone) || '');
   var dl = D.dealers[o.dealerId], stt = doStatus(o), loc = o.loc || curLoc();
-  if (o.status === 'submitted') { if (!S.f.acc || S.f.acc.id !== o.id) S.f.acc = { id: o.id, loc: doLoc(), q: null }; loc = S.f.acc.loc; if (!S.f.acc.q || S.f.acc.qLoc !== loc) { S.f.acc.qLoc = loc; S.f.acc.q = o.lines.map(function (l) { var p = D.products[l.pid], v = p && p.variants.find(function (x) { return x.id === l.vid; }); return Math.min(l.qty, v ? availAt(v, loc) : 0); }); } }
+  if (isSeller && o.status === 'submitted') { if (!S.f.acc || S.f.acc.id !== o.id) S.f.acc = { id: o.id, loc: doLoc(), q: null }; loc = S.f.acc.loc; if (!S.f.acc.q || S.f.acc.qLoc !== loc) { S.f.acc.qLoc = loc; S.f.acc.q = o.lines.map(function (l) { var p = D.products[l.pid], v = p && p.variants.find(function (x) { return x.id === l.vid; }); return Math.min(l.qty, v ? availAt(v, loc) : 0); }); } }
   var acc = S.f.acc && S.f.acc.id === o.id ? S.f.acc : null;
   var tl = (o.timeline || []).reduce(function (m, x) { m[x.s] = x; return m; }, {});
   var flow = o.status === 'rejected' ? ['submitted', 'rejected'] : DO_FLOW;
   var cur = o.status === 'partial' ? 'accepted' : o.status, ci = flow.indexOf(cur);
   var sub2 = { submitted: t('tl_sub', 'Order received'), accepted: t('tl_acc', 'Stock reserved'), rejected: t('tl_rej', 'Order declined'), packed: t('tl_pack', 'Packed and ready'), dispatched: t('tl_disp', 'Stock leaves on dispatch'), delivered: t('tl_del', 'Dealer confirms receipt'), closed: t('tl_close', 'Invoice settled') };
   var timeline = '<section class="card pad timeline">' + flow.map(function (s, i) { var k = i < ci || (i === ci && (s === 'closed' || s === 'rejected')) ? 'done' : i === ci ? 'now' : 'next'; var e = tl[s] || (s === 'accepted' ? tl.partial : null); return '<div class="tl ' + k + '"><div class="rail"><span class="nd">' + (k === 'done' ? icon(s === 'rejected' ? 'x' : 'check', 12, 2.8) : '') + '</span>' + (i < flow.length - 1 ? '<span class="ln"></span>' : '') + '</div><div class="tc"><span><b>' + esc(doStatus({ status: s })[0]) + '</b><br><small>' + esc(e && e.note ? e.note : sub2[s]) + '</small></span><small class="num" style="white-space:nowrap">' + esc(e ? fmtD(e.at) + ', ' + fmtT(e.at) : '') + '</small></div></div>'; }).join('') + '</section>';
-  var lines = '<section class="tbl-wrap"><table class="tbl"><thead><tr><th>' + esc(t('item', 'Item')) + '</th><th class="r">' + esc(t('ordered', 'Ordered')) + '</th><th class="r">' + esc(o.status === 'submitted' ? t('available', 'Available') : t('accepted', 'Accepted')) + '</th>' + (o.status === 'submitted' ? '<th class="r">' + esc(t('accept', 'Accept')) + '</th>' : '') + '<th class="r">' + esc(t('amount', 'Amount')) + '</th></tr></thead><tbody>' + o.lines.map(function (l, i) { var p = D.products[l.pid], v = p && p.variants.find(function (x) { return x.id === l.vid; }), a = v ? availAt(v, loc) : 0; return '<tr><td><b>' + esc(l.name) + '</b><div class="xsmall muted">' + esc(l.label + ' · ' + inr(l.rate)) + '</div></td><td class="r">' + (+l.qty || 0) + '</td><td class="r ' + (o.status === 'submitted' && a < l.qty ? 'bad-t b' : '') + '">' + (o.status === 'submitted' ? a : (+l.acc || 0)) + '</td>' + (o.status === 'submitted' ? '<td class="r"><input class="in" id="f-acc-' + i + '" data-m="f.acc.q.' + i + '" data-num data-r inputmode="numeric" value="' + esc(acc ? acc.q[i] : 0) + '" aria-label="' + esc(t('accept', 'Accept')) + '"' + (can('dealers') ? '' : ' disabled') + '></td>' : '') + '<td class="r b">' + inr((o.status === 'submitted' ? l.qty : (+l.acc || 0)) * l.rate) + '</td></tr>'; }).join('') + '</tbody></table></section>';
+  var lines = '<section class="tbl-wrap"><table class="tbl"><thead><tr><th>' + esc(t('item', 'Item')) + '</th><th class="r">' + esc(t('ordered', 'Ordered')) + '</th><th class="r">' + esc(isSeller && o.status === 'submitted' ? t('available', 'Available') : t('accepted', 'Accepted')) + '</th>' + (isSeller && o.status === 'submitted' ? '<th class="r">' + esc(t('accept', 'Accept')) + '</th>' : '') + '<th class="r">' + esc(t('amount', 'Amount')) + '</th></tr></thead><tbody>' + o.lines.map(function (l, i) { var p = D.products[l.pid], v = p && p.variants.find(function (x) { return x.id === l.vid; }), a = v ? availAt(v, loc) : 0; return '<tr><td><b>' + esc(l.name) + '</b><div class="xsmall muted">' + esc(l.label + ' · ' + inr(l.rate)) + '</div></td><td class="r">' + (+l.qty || 0) + '</td><td class="r ' + (isSeller && o.status === 'submitted' && a < l.qty ? 'bad-t b' : '') + '">' + (isSeller && o.status === 'submitted' ? a : (+l.acc || 0)) + '</td>' + (isSeller && o.status === 'submitted' ? '<td class="r"><input class="in" id="f-acc-' + i + '" data-m="f.acc.q.' + i + '" data-num data-r inputmode="numeric" value="' + esc(acc ? acc.q[i] : 0) + '" aria-label="' + esc(t('accept', 'Accept')) + '"' + (can('dealers') ? '' : ' disabled') + '></td>' : '') + '<td class="r b">' + inr((o.status === 'submitted' ? l.qty : (+l.acc || 0)) * l.rate) + '</td></tr>'; }).join('') + '</tbody></table></section>';
   var staff = vals(D.staff).filter(function (s) { return s.status === 'active'; });
   var actions = '';
-  if (can('dealers')) {
+  if (isSeller && can('dealers')) {
     if (o.status === 'submitted') actions = '<div class="stack sm">' + (locs().length > 1 ? selF(t('fulfil_from', 'Fulfil from'), 'f.acc.loc', locs().map(function (l) { return [l.id, l.name]; })) : '') + busyBtn(t('accept_sel', 'Accept selected quantities'), 'acceptDO', 'primary lg', 'data-id="' + esc(o.id) + '"', 'do') + '<button class="btn danger" data-a="sheet" data-k="rejectDO" data-id="' + esc(o.id) + '">' + esc(t('reject', 'Reject order')) + '</button></div>';
     if (o.status === 'accepted' || o.status === 'partial') actions = '<div class="stack sm">' + (staff.length ? selF(t('assign_to', 'Assign packing to'), 'f.asg', [['', t('unassigned', 'Unassigned')]].concat(staff.map(function (s) { return [s.id, s.name + ' · ' + roleName(s.role)]; })), 'data-change="assignDO" data-id="' + esc(o.id) + '"') : '') + busyBtn(t('mark_packed', 'Mark as packed'), 'advDO', 'primary lg', 'data-id="' + esc(o.id) + '" data-v="packed"', 'do') + '</div>';
     if (o.status === 'packed') actions = '<button class="btn primary lg" data-a="sheet" data-k="dispatch" data-id="' + esc(o.id) + '">' + icon('truck', 18) + esc(t('dispatch', 'Dispatch')) + '</button>';
-    if (o.status === 'dispatched') actions = busyBtn(t('mark_delivered', 'Mark delivered'), 'advDO', 'primary lg', 'data-id="' + esc(o.id) + '" data-v="delivered"', 'do');
+    if (o.status === 'dispatched') actions = '<div class="note">' + icon('truck', 16) + '<span>' + esc(t('awaiting_buyer_rc', 'Dispatched via {c} (LR {lr}). Stock deducted. Awaiting buyer receipt confirmation.', { c: o.carrier || 'Transporter', lr: o.lr || 'N/A' })) + '</span></div>';
     if (o.status === 'delivered') actions = busyBtn(t('close_order', 'Close order'), 'advDO', 'strong lg', 'data-id="' + esc(o.id) + '" data-v="closed"', 'do');
+  } else if (isBuyer && can('dealers')) {
+    if (o.status === 'dispatched') actions = '<button class="btn primary lg" data-a="sheet" data-k="deliverDO" data-id="' + esc(o.id) + '">' + icon('package', 18) + esc(t('confirm_receipt', 'Confirm receipt & add to stock')) + '</button>';
+    else if (o.status === 'delivered' || o.status === 'closed') actions = '<div class="banner ok"><span class="ic ok">' + icon('checkCircle', 18) + '</span><span class="tx"><b>' + esc(t('goods_received', 'Goods received into inventory.')) + '</b></span></div>';
+    else if (o.status === 'submitted') actions = '<div class="note">' + icon('clock', 16) + '<span>' + esc(t('waiting_for_seller', 'Order submitted. Waiting for {s} to accept.', { s: o.sellerName || 'Seller' })) + '</span></div>';
+    else if (o.status === 'accepted' || o.status === 'partial') actions = '<div class="note">' + icon('check', 16) + '<span>' + esc(t('seller_accepted_note', 'Order accepted by {s}. Stock reserved.', { s: o.sellerName || 'Seller' })) + '</span></div>';
   }
   if (S.f.asgFor !== o.id) { S.f.asg = o.assignee || ''; S.f.asgFor = o.id; }
-  return ph(o.no, pill(stt[0], stt[1]) + ' · ' + esc(dl ? dl.name : ''), dl && dl.phone ? '<a class="ib" target="_blank" rel="noopener" href="' + esc(waLink(dl.phone, t('wa_do', 'Hi, update on your order {no}: {s}.', { no: o.no, s: stt[0] }))) + '" data-a="noop" aria-label="WhatsApp">' + icon('message', 19) + '</a>' : '', 'back') +
-    '<div class="cols"><div class="stack lg"><section class="hero" style="padding:16px 18px"><div class="between"><div class="stack sm" style="gap:4px"><span class="lab">' + esc(t('dealer_price_n', '{t} price · {n} pcs', { t: tierName(dl && dl.tier), n: sum(o.lines, function (l) { return o.status === 'submitted' ? l.qty : (+l.acc || 0); }) })) + '</span><span class="big" style="font-size:30px">' + inr(o.total) + '</span></div>' + (o.reserved ? '<span class="chipd">' + icon('lock', 13) + esc(t('stock_reserved', 'Stock reserved')) + '</span>' : '') + '</div></section>' + lines + (o.invNo ? '<button class="li card" data-a="openInv" data-day="' + esc(o.invDay) + '" data-id="' + esc(o.invId) + '"><span class="ic">' + icon('file', 17) + '</span><span class="tx"><b>' + esc(t('invoice_no', 'Invoice {no}', { no: o.invNo })) + '</b><small>' + esc(t('th_wholesale', 'Wholesale & Dealer')) + '</small></span>' + icon('chevR', 18) + '</button>' : '') + (o.note ? '<div class="note">' + icon('info', 16) + '<span>' + esc(o.note) + '</span></div>' : '') + '</div><div class="stack lg">' + timeline + actions + '</div></div>';
+  return ph(o.no, pill(stt[0], stt[1]) + ' · ' + esc(otherName), otherPhone ? '<a class="ib" target="_blank" rel="noopener" href="' + esc(waLink(otherPhone, t('wa_do', 'Hi, update on order {no}: {s}.', { no: o.no, s: stt[0] }))) + '" data-a="noop" aria-label="WhatsApp">' + icon('message', 19) + '</a>' : '', 'back') +
+    '<div class="cols"><div class="stack lg"><section class="hero" style="padding:16px 18px"><div class="between"><div class="stack sm" style="gap:4px"><span class="lab">' + esc(isBuyer ? t('order_from_seller', 'Order to {s}', { s: otherName }) : t('dealer_price_n', '{t} price · {n} pcs', { t: tierName(dl && dl.tier), n: sum(o.lines, function (l) { return o.status === 'submitted' ? l.qty : (+l.acc || 0); }) })) + '</span><span class="big" style="font-size:30px">' + inr(o.total) + '</span></div>' + (o.reserved ? '<span class="chipd">' + icon('lock', 13) + esc(t('stock_reserved', 'Stock reserved')) + '</span>' : '') + '</div></section>' + lines + (o.invNo ? '<button class="li card" data-a="openInv" data-day="' + esc(o.invDay) + '" data-id="' + esc(o.invId) + '"><span class="ic">' + icon('file', 17) + '</span><span class="tx"><b>' + esc(t('invoice_no', 'Invoice {no}', { no: o.invNo })) + '</b><small>' + esc(t('th_wholesale', 'Wholesale & Dealer')) + '</small></span>' + icon('chevR', 18) + '</button>' : '') + (o.note ? '<div class="note">' + icon('info', 16) + '<span>' + esc(o.note) + '</span></div>' : '') + '</div><div class="stack lg">' + timeline + actions + '</div></div>';
 }
-A.assignDO = async function (d, el) { try { await patch('dorders/' + el.getAttribute('data-id'), { assignee: el.value || '' }); toast(t('assigned', 'Assigned')); } catch (e) { toast(errText(e), 'bad'); } };
+A.assignDO = async function (d, el) { try { await patchDO(el.getAttribute('data-id'), { assignee: el.value || '', updatedAt: Date.now() }); toast(t('assigned', 'Assigned')); } catch (e) { toast(errText(e), 'bad'); } };
 A.acceptDO = async function (d) {
   var o0 = D.dorders[d.id]; if (!o0) return;
   var useLoc = d.all || !(S.f.acc && S.f.acc.id === d.id) ? doLoc() : (S.f.acc.loc || doLoc());
   var qs = d.all || !(S.f.acc && S.f.acc.id === d.id) ? o0.lines.map(function (l) { var p = D.products[l.pid], v = p && p.variants.find(function (x) { return x.id === l.vid; }); return Math.min(l.qty, v ? availAt(v, useLoc) : 0); }) : S.f.acc.q;
   var ok = await tx('do', async function () {
-    var o = await fresh('dorders/' + d.id), now = Date.now(), loc = useLoc; if (o.status !== 'submitted') return 1;
+    var o = await freshDO(d.id), now = Date.now(), loc = useLoc; if (o.status !== 'submitted') return 1;
     var byP = {};
     o.lines.forEach(function (l, i) { var q = Math.max(0, Math.min(l.qty, Math.round(+qs[i] || 0))); l.acc = q; if (q) (byP[l.pid] = byP[l.pid] || []).push({ vid: l.vid, q: q, name: l.name + ' ' + l.label }); });
     var accTotal = sum(o.lines, function (l) { return l.acc; });
     if (!accTotal) throw fail(t('err_accept0', 'Nothing to accept. Reject the order instead.'));
-    for (var pid in byP) { var p = await fresh('products/' + pid); byP[pid].forEach(function (x) { var v = p.variants.find(function (y) { return y.id === x.vid; }); var a = v ? availAt(v, loc) : 0; if (a < x.q) throw fail(t('err_reserve', 'Only {n} of {x} can be reserved at {l}.', { n: a, x: x.name, l: locName(loc) })); v.reserved = (+v.reserved || 0) + x.q; }); p.updatedAt = now; await put('products/' + pid, p); }
+    for (var pid in byP) { var p = await fresh('products/' + pid); if (p) { byP[pid].forEach(function (x) { var v = p.variants.find(function (y) { return y.id === x.vid; }); var a = v ? availAt(v, loc) : 0; if (a < x.q) throw fail(t('err_reserve', 'Only {n} of {x} can be reserved at {l}.', { n: a, x: x.name, l: locName(loc) })); v.reserved = (+v.reserved || 0) + x.q; }); p.updatedAt = now; await put('products/' + pid, p); } }
     var partial = o.lines.some(function (l) { return l.acc < l.qty; });
     o.status = partial ? 'partial' : 'accepted'; o.loc = loc; o.reserved = true;
     o.total = VXC.calcBill(o.lines.map(function (l) { return { qty: l.acc, rate: l.rate, gst: l.gst }; }), { incl: storeV().priceIncl !== false }).grand;
+    o.updatedAt = now; o.lastActionBy = 'seller';
     o.timeline = (o.timeline || []).concat([{ s: o.status, at: now, by: ME.id || '', note: partial ? t('tl_partial', '{a} of {b} pcs accepted', { a: accTotal, b: sum(o.lines, function (l) { return l.qty; }) }) : '' }]);
-    await put('dorders/' + d.id, o); return 1;
+    await putDO(d.id, o); return 1;
   });
   if (ok) { S.f.acc = null; toast(t('do_accepted', 'Order accepted. Stock reserved.')); }
 };
 function rejectSheet(sh) { if (!S.f.rej || S.f.rej.id !== sh.id) S.f.rej = { id: sh.id, reason: '' }; return sheetWrap(t('reject', 'Reject order'), txtF(t('reason', 'Reason'), 'f.rej.reason', 'placeholder="' + esc(t('rej_ph', 'Out of stock this season')) + '"'), busyBtn(t('reject', 'Reject order'), 'doReject', 'danger lg', '', 'do')); }
-A.doReject = async function () { var f = S.f.rej; var ok = await tx('do', async function () { var o = await fresh('dorders/' + f.id); if (o.status !== 'submitted') return 1; o.status = 'rejected'; o.timeline = (o.timeline || []).concat([{ s: 'rejected', at: Date.now(), by: ME.id || '', note: f.reason || '' }]); await put('dorders/' + f.id, o); return 1; }); if (ok) { S.f.rej = null; closeSheet(); toast(t('do_rejected', 'Order rejected')); } };
+A.doReject = async function () { var f = S.f.rej; var ok = await tx('do', async function () { var o = await freshDO(f.id); if (o.status !== 'submitted') return 1; o.status = 'rejected'; o.updatedAt = Date.now(); o.lastActionBy = 'seller'; o.timeline = (o.timeline || []).concat([{ s: 'rejected', at: Date.now(), by: ME.id || '', note: f.reason || '' }]); await putDO(f.id, o); return 1; }); if (ok) { S.f.rej = null; closeSheet(); toast(t('do_rejected', 'Order rejected')); } };
 function dispatchSheet(sh) { if (!S.f.dsp || S.f.dsp.id !== sh.id) S.f.dsp = { id: sh.id, carrier: '', lr: '' }; return sheetWrap(t('dispatch', 'Dispatch'), '<div class="g2">' + txtF(t('carrier', 'Transporter'), 'f.dsp.carrier', 'placeholder="VRL Logistics"') + txtF(t('lr_no', 'LR / docket no.'), 'f.dsp.lr') + '</div><div class="note">' + icon('info', 17) + '<span>' + esc(t('dsp_note', 'Reserved stock leaves inventory now, a Wholesale & Dealer invoice is created and the amount is added to the dealer’s balance.')) + '</span></div>', busyBtn(t('dispatch_now', 'Dispatch now'), 'doDispatch', 'primary lg', '', 'do')); }
 A.doDispatch = async function () {
   var f = S.f.dsp;
   var ok = await tx('do', async function () {
-    var o = await fresh('dorders/' + f.id), now = Date.now(); if (o.status !== 'packed') return 1;
-    var loc = o.loc || curLoc(), dl = await fresh('dealers/' + o.dealerId), st = storeV();
+    var o = await freshDO(f.id), now = Date.now(); if (o.status !== 'packed') return 1;
+    var loc = o.loc || curLoc(), st = storeV(), dl = o.dealerId ? await fresh('dealers/' + o.dealerId) : null;
     var lines = o.lines.filter(function (l) { return +l.acc > 0; });
     for (var i = 0; i < lines.length; i++) { var l = lines[i], p = await fresh('products/' + l.pid); if (!p) continue; var v = p.variants.find(function (y) { return y.id === l.vid; }); if (v) { v.stock = v.stock || {}; v.stock[loc] = Math.max(0, (+v.stock[loc] || 0) - l.acc); v.reserved = Math.max(0, (+v.reserved || 0) - l.acc); v.sold = (+v.sold || 0) + l.acc; } p.updatedAt = now; await put('products/' + l.pid, p); }
     var c = VXC.calcBill(lines.map(function (l) { return { qty: l.acc, rate: l.rate, gst: l.gst }; }), { incl: st.priceIncl !== false });
     var day = dayKey(now); await ensureDay(day);
     var no = (st.prefix || 'VX') + '-' + VXC.pad(await nextNo('inv'), 4), iid = uid('i');
-    var inv = { no: no, at: now, kind: 'sale', loc: loc, by: ME.id || '', theme: 'wholesale', tier: dl && dl.tier || 'dealer', cust: { id: '', name: dl ? dl.name : '', phone: dl ? dl.phone : '', dealerId: o.dealerId }, lines: c.lines.map(function (x, i) { var s = lines[i]; return { pid: s.pid, vid: s.vid, name: s.name, label: s.label, sku: s.sku || '', hsn: s.hsn || '', qty: s.acc, rate: s.rate, gst: s.gst, taxable: x.taxable, tax: x.tax, total: x.total }; }), gross: c.gross, disc: 0, taxable: c.taxable, tax: c.tax, cgst: c.cgst, sgst: c.sgst, round: c.round, total: c.grand, incl: st.priceIncl !== false, pay: { mode: 'credit', cash: 0, upi: 0, card: 0, credit: c.grand, dealer: o.dealerId, due: now + 30 * 864e5 }, note: o.no };
+    var inv = { no: no, at: now, kind: 'sale', loc: loc, by: ME.id || '', theme: 'wholesale', tier: dl && dl.tier || 'dealer', cust: { id: '', name: dl ? dl.name : (o.buyerName || ''), phone: dl ? dl.phone : (o.buyerPhone || ''), dealerId: o.dealerId || '' }, lines: c.lines.map(function (x, i) { var s = lines[i]; return { pid: s.pid, vid: s.vid, name: s.name, label: s.label, sku: s.sku || '', hsn: s.hsn || '', qty: s.acc, rate: s.rate, gst: s.gst, taxable: x.taxable, tax: x.tax, total: x.total }; }), gross: c.gross, disc: 0, taxable: c.taxable, tax: c.tax, cgst: c.cgst, sgst: c.sgst, round: c.round, total: c.grand, incl: st.priceIncl !== false, pay: { mode: 'credit', cash: 0, upi: 0, card: 0, credit: c.grand, dealer: o.dealerId || '', due: now + 30 * 864e5 }, note: o.no };
     var u = {}; u[iid] = inv; await patch('ledger/' + day, { inv: u });
     if (dl) { dl.balance = r2((+dl.balance || 0) + c.grand); dl.txns = (dl.txns || []).concat([{ t: 'credit', amt: c.grand, at: now, ref: no + ' / ' + o.no }]).slice(-80); await put('dealers/' + o.dealerId, dl); }
     o.status = 'dispatched'; o.carrier = f.carrier || ''; o.lr = f.lr || ''; o.reserved = false; o.invNo = no; o.invDay = day; o.invId = iid; o.total = c.grand;
+    o.updatedAt = now; o.lastActionBy = 'seller';
     o.timeline = (o.timeline || []).concat([{ s: 'dispatched', at: now, by: ME.id || '', note: [f.carrier, f.lr ? 'LR ' + f.lr : ''].filter(Boolean).join(' · ') }]);
-    await put('dorders/' + f.id, o); return 1;
+    await putDO(f.id, o); return 1;
   });
   if (ok) { S.f.dsp = null; closeSheet(); toast(t('do_dispatched', 'Dispatched. Invoice created.')); }
 };
-A.advDO = async function (d) { var ok = await tx('do', async function () { var o = await fresh('dorders/' + d.id); o.status = d.v; o.timeline = (o.timeline || []).concat([{ s: d.v, at: Date.now(), by: ME.id || '' }]); await put('dorders/' + d.id, o); return 1; }); if (ok) toast(doStatus({ status: d.v })[0]); };
+A.advDO = async function (d) {
+  var ok = await tx('do', async function () {
+    var o = await freshDO(d.id);
+    o.status = d.v; o.updatedAt = Date.now();
+    o.lastActionBy = o.sellerBusinessId === currentBusinessId() ? 'seller' : 'buyer';
+    o.timeline = (o.timeline || []).concat([{ s: d.v, at: Date.now(), by: ME.id || '' }]);
+    await putDO(d.id, o);
+    return 1;
+  });
+  if (ok) toast(doStatus({ status: d.v })[0]);
+};
+
+function deliverSheet(sh) {
+  var o = D.dorders[sh.id]; if (!o) return '';
+  if (!S.f.dlv || S.f.dlv.id !== sh.id) { S.f.dlv = { id: sh.id, loc: (locs().find(function (l) { return l.type === 'godown'; }) || locs()[0]).id }; }
+  var f = S.f.dlv, totalPcs = sum(o.lines, function (l) { return +l.acc || 0; });
+  return sheetWrap(t('confirm_receipt', 'Confirm goods receipt'),
+    '<div class="stack lg"><div class="note">' + icon('truck', 17) + '<span>' + esc(t('rc_disp_info', 'Dispatched by {s} via {c} · LR {lr}', { s: o.sellerName || 'Seller', c: o.carrier || 'Transporter', lr: o.lr || 'N/A' })) + '</span></div>' +
+    '<div class="card pad stack sm"><div class="between"><b>' + esc(t('items_to_receive', 'Items to receive')) + '</b><span class="pill ok">' + esc(t('n_pcs', '{n} pcs', { n: totalPcs })) + '</span></div>' +
+    '<div class="list">' + o.lines.filter(function (l) { return +l.acc > 0; }).map(function (l) { return '<div class="li"><span class="tx"><b>' + esc(l.name) + '</b><small>' + esc(l.label + (l.sku ? ' · ' + l.sku : '')) + '</small></span><b class="num">' + (+l.acc) + ' pcs</b></div>'; }).join('') + '</div></div>' +
+    selF(t('put_away_loc', 'Receive into location'), 'f.dlv.loc', locs().map(function (l) { return [l.id, l.name + ' (' + (l.type === 'godown' ? t('loc_godown', 'Godown') : t('loc_shop_t', 'Shop')) + ')']; })) + '</div>',
+    busyBtn(t('receive_into_stock', 'Receive into stock'), 'doDeliver', 'primary lg', '', 'do')
+  );
+}
+A.doDeliver = async function () {
+  var f = S.f.dlv; if (!f) return;
+  var ok = await tx('do', async function () {
+    var o = await freshDO(f.id); if (!o || o.status !== 'dispatched') return 1;
+    var now = Date.now(), loc = f.loc || curLoc(), lines = o.lines.filter(function (l) { return +l.acc > 0; });
+    for (var i = 0; i < lines.length; i++) {
+      var l = lines[i], existing = null, ps = vals(D.products);
+      for (var j = 0; j < ps.length; j++) {
+        var p = ps[j], v = (p.variants || []).find(function (x) { return x.sku && l.sku && x.sku.toUpperCase() === l.sku.toUpperCase(); });
+        if (v) { existing = { p: p, v: v }; break; }
+      }
+      if (existing) {
+        var pDoc = await fresh('products/' + existing.p.id);
+        var vDoc = pDoc.variants.find(function (x) { return x.id === existing.v.id; });
+        if (vDoc) { vDoc.stock = vDoc.stock || {}; vDoc.stock[loc] = (+vDoc.stock[loc] || 0) + l.acc; }
+        pDoc.updatedAt = now; await put('products/' + existing.p.id, pDoc);
+      } else {
+        var newPid = uid('p'), newVid = uid('v');
+        var newProd = { id: newPid, name: l.name, cat: 'Garments', fabric: '', hsn: l.hsn || '', gst: +l.gst || 5, cost: +l.rate || 0, price: { retail: Math.round((+l.rate || 0) * 1.4), wholesale: Math.round((+l.rate || 0) * 1.15), dealer: Math.round((+l.rate || 0) * 1.1) }, variants: [{ id: newVid, size: (l.label || '').split(' · ')[0] || 'Free size', color: (l.label || '').split(' · ')[1] || 'Standard', sku: l.sku || ('VX-' + Math.random().toString(36).slice(2, 8).toUpperCase()), stock: {}, reserved: 0, sold: 0 }], createdAt: now, updatedAt: now };
+        newProd.variants[0].stock[loc] = l.acc; await put('products/' + newPid, newProd);
+      }
+    }
+    o.status = 'delivered'; o.deliveredAt = now; o.updatedAt = now; o.lastActionBy = 'buyer';
+    o.timeline = (o.timeline || []).concat([{ s: 'delivered', at: now, by: ME.id || '', note: t('tl_del_b', 'Received into {l}', { l: locName(loc) }) }]);
+    await putDO(f.id, o); return 1;
+  });
+  if (ok) { S.f.dlv = null; closeSheet(); toast(t('goods_received', 'Goods received. Stock added to inventory.')); }
+};
 
 /* ===================== STAFF ===================== */
 function vStaff() {
@@ -291,22 +457,56 @@ A.gGo = function (d) { closeSheet(); go(d.r); };
 function confirmSheet(sh) { return sheetWrap(sh.title, '<p style="font-size:15px;line-height:1.5">' + esc(sh.msg) + '</p>', '<button class="btn line" data-a="close">' + esc(t('cancel', 'Cancel')) + '</button><button class="btn ' + (sh.danger ? 'danger' : 'primary') + '" data-a="' + sh.act + '">' + esc(sh.yes) + '</button>'); }
 function billThemeSheet() { return sheetWrap(t('invoice_theme', 'Invoice theme'), themePicker('bill.theme'), '<button class="btn primary lg" data-a="close">' + esc(t('done', 'Done')) + '</button>', true); }
 
-var SHEETS = { checkout: coView, saleDone: doneView, variant: variantSheet, line: lineSheet, custom: customSheet, disc: discSheet, custPick: custPickSheet, held: heldSheet, billTheme: billThemeSheet, pmore: pmoreSheet, count: countSheet, supplier: supplierSheet, supPay: supPaySheet, utr: utrSheet, cn: cnSheet, collect: collectSheet, custEdit: custEditSheet, expense: expenseSheet, cashEntry: cashEntrySheet, dealer: dealerSheet, dispatch: dispatchSheet, rejectDO: rejectSheet, loc: locSheet, search: searchSheet, alerts: alertsSheet, confirm: confirmSheet, subscribe: subSheet, fabricDrape: fabricDrapeSheet };
+var SHEETS = { checkout: coView, saleDone: doneView, variant: variantSheet, line: lineSheet, custom: customSheet, disc: discSheet, custPick: custPickSheet, held: heldSheet, billTheme: billThemeSheet, pmore: pmoreSheet, count: countSheet, supplier: supplierSheet, supPay: supPaySheet, utr: utrSheet, cn: cnSheet, collect: collectSheet, custEdit: custEditSheet, expense: expenseSheet, cashEntry: cashEntrySheet, dealer: dealerSheet, dispatch: dispatchSheet, rejectDO: rejectSheet, deliverDO: deliverSheet, loc: locSheet, search: searchSheet, alerts: alertsSheet, confirm: confirmSheet, subscribe: subSheet, fabricDrape: fabricDrapeSheet };
 function sheetView() { var f = SHEETS[S.sheet.k]; if (!f) return ''; try { return f(S.sheet) || ''; } catch (e) { console.error(e); return sheetWrap(t('err_render', 'This screen hit a problem.'), '<p class="small muted">' + esc(e.message) + '</p>', ''); } }
 A.sheet = function (d) { var o = {}; Object.keys(d).forEach(function (k) { o[k] = d[k]; }); openSheet(d.k, o); };
-var SUBS = { product: subProduct, pform: subPform, tform: subTform, poform: subPOform, po: subPO, receive: subReceive, supplier: subSupplier, invoice: subInvoice, customer: subCustomer, doform: subDOform, dorder: subDO, contact: subContact, about: subAbout, privacy: subPrivacy };
-var SUBS_NOBAR = { pform: 1, tform: 1, poform: 1, receive: 1, doform: 1 };
+var SUBS = { product: subProduct, pform: subPform, tform: subTform, poform: subPOform, po: subPO, receive: subReceive, supplier: subSupplier, invoice: subInvoice, customer: subCustomer, doform: subDOform, doOutForm: subDOOutgoingForm, dorder: subDO, contact: subContact, about: subAbout, privacy: subPrivacy };
+var SUBS_NOBAR = { pform: 1, tform: 1, poform: 1, receive: 1, doform: 1, doOutForm: 1 };
 
 /* ===================== SUBSCRIPTION SHEET =====================
-   Payment never activates a plan on the device. The owner pays the platform UPI ID, submits the UTR,
-   and a platform admin verifies it in the admin console, which is the only place a plan can be activated
-   (enforced by firestore.rules). */
-var PLANS = {
-  monthly: { amount: 699, days: 30, label: ['sub_monthly', 'Monthly'], per: ['per_mo', '/ month'], desc: ['sub_monthly_desc', 'Billed every month. Cancel anytime.'] },
-  quarterly: { amount: 1899, days: 90, label: ['sub_quarterly', '3 Months'], per: ['per_3mo', '/ 3 months'], desc: ['sub_quarterly_desc', '₹633/mo · Billed ₹1,899 every 3 months.'], tag: ['sub_popular', 'POPULAR · SAVE 10%'] },
-  annual: { amount: 6999, days: 365, label: ['sub_annual', 'Annual'], per: ['per_yr', '/ year'], desc: ['sub_annual_desc', '₹583/mo · 2 months free.'], tag: ['sub_best_val', 'BEST VALUE · SAVE 17%'] }
+   A plan is never activated on the device. Two ways to pay, both switchable from the admin console:
+   1. Razorpay — the payment server (/api) creates the order at the admin-set price, verifies the signature
+      with the gateway and activates the plan (the webhook does the same if the app closes early).
+   2. Manual UPI — the owner pays the platform UPI ID and submits the UTR; an admin verifies it.
+   firestore.rules make sure only the server or a platform admin can change a plan. */
+var PLAN_KEYS = ['monthly', 'quarterly', 'annual'];
+var PLAN_DEFAULTS = {
+  monthly: { label: 'Monthly', amount: 699, days: 30, active: true },
+  quarterly: { label: '3 Months', amount: 1899, days: 90, active: true },
+  annual: { label: 'Annual', amount: 6999, days: 365, active: true }
 };
-function platformBilling() { return (window.VX_CONFIG && window.VX_CONFIG.billing) || {}; }
+var PLAN_TEXT = {
+  monthly: { label: ['sub_monthly', 'Monthly'], per: ['per_mo', '/ month'] },
+  quarterly: { label: ['sub_quarterly', '3 Months'], per: ['per_3mo', '/ 3 months'] },
+  annual: { label: ['sub_annual', 'Annual'], per: ['per_yr', '/ year'] }
+};
+function billingCfg() {
+  var c = D.billing || {}, local = (window.VX_CONFIG && window.VX_CONFIG.billing) || {};
+  return {
+    methods: Object.assign({ razorpay: true, upi: true }, c.methods || {}),
+    upiId: c.upiId || local.upiId || '', payeeName: c.payeeName || local.payeeName || 'Vastrenix',
+    android: c.android === 'hidden' || c.android === 'inapp' ? c.android : 'external', webAppUrl: String(c.webAppUrl || local.webAppUrl || '').replace(/\/+$/, ''),
+    apiBase: String(local.apiBase || '').replace(/\/+$/, '')
+  };
+}
+/* Android app with the Razorpay SDK (APK builds), switched on by the admin (Settings → In the Android app). */
+function nativeInApp(cfg) {
+  cfg = cfg || billingCfg();
+  return !!(IS_NATIVE && cfg.android === 'inapp' && cfg.methods.razorpay && /^https:\/\//.test(cfg.webAppUrl) && window.VX_NATIVE_CAPS && window.VX_NATIVE_CAPS.rzp);
+}
+function plans() {
+  var c = (D.billing && D.billing.plans) || {}, out = {};
+  PLAN_KEYS.forEach(function (k) { var p = Object.assign({}, PLAN_DEFAULTS[k], c[k] || {}); p.key = k; p.amount = +p.amount || PLAN_DEFAULTS[k].amount; p.days = +p.days || PLAN_DEFAULTS[k].days; out[k] = p; });
+  return out;
+}
+function activePlans() { var ps = plans(); return PLAN_KEYS.filter(function (k) { return ps[k].active !== false; }); }
+function planName(k) { var p = plans()[k], tx = PLAN_TEXT[k]; if (!p) return k; return p.label && p.label !== PLAN_DEFAULTS[k].label ? p.label : t(tx.label[0], tx.label[1]); }
+function perMonth(p) { return p.amount / p.days * 30; }
+function planSaving(k) { var ps = plans(), base = ps.monthly; if (k === 'monthly' || !base) return 0; var s = Math.round((1 - perMonth(ps[k]) / perMonth(base)) * 100); return s >= 3 ? s : 0; }
+function watchBilling() {
+  if (S.billWatch || !window.FS) return;
+  S.billWatch = window.FS.doc('config/billing').onSnapshot(function (s) { D.billing = s.exists ? s.data() : null; schedule(); }, function () { });
+}
 function subReqDoc() { return D.subRequest || null; }
 function watchSubRequest() {
   if (S.subReqWatch || !window.FS || !ME.isOwner) return;
@@ -314,58 +514,67 @@ function watchSubRequest() {
   S.subReqWatch = window.FS.doc('subscriptionRequests/' + sid).onSnapshot(function (s) { D.subRequest = s.exists ? s.data() : null; schedule(); }, function () { });
 }
 function planCard(key, sel) {
-  var p = PLANS[key], on = sel === key;
+  var p = plans()[key], on = sel === key, save = planSaving(key);
+  var desc = key === 'monthly' ? t('sub_monthly_desc2', 'Billed every month.') : t('sub_pm', '{pm} a month', { pm: inr(perMonth(p)) }) + (key === 'annual' && save >= 15 ? ' · ' + t('sub_2mo', '2 months free') : '');
   return '<button type="button" class="plan' + (on ? ' on' : '') + '" role="radio" aria-checked="' + on + '" data-a="setSubCycle" data-v="' + key + '">' +
-    (p.tag ? '<span class="pill ok plan-tag">' + esc(t(p.tag[0], p.tag[1])) + '</span>' : '') +
-    '<span class="stack xs"><b>' + esc(t(p.label[0], p.label[1])) + '</b><span class="xsmall muted">' + esc(t(p.desc[0], p.desc[1])) + '</span></span>' +
-    '<span class="plan-price"><b class="num">' + inr(p.amount) + '</b><span class="xsmall muted">' + esc(t(p.per[0], p.per[1])) + '</span></span>' +
+    (save ? '<span class="pill ok plan-tag">' + esc(t('sub_save', 'SAVE {n}%', { n: save })) + '</span>' : '') +
+    '<span class="stack xs"><b>' + esc(planName(key)) + '</b><span class="xsmall muted">' + esc(desc) + '</span></span>' +
+    '<span class="plan-price"><b class="num">' + inr(p.amount) + '</b><span class="xsmall muted">' + esc(t(PLAN_TEXT[key].per[0], PLAN_TEXT[key].per[1])) + '</span></span>' +
     '<span class="plan-dot" aria-hidden="true">' + (on ? icon('check', 14, 3) : '') + '</span></button>';
 }
 function upiPayUrl(amount, note) {
-  var b = platformBilling(); if (!b.upiId) return '';
-  return 'upi://pay?pa=' + encodeURIComponent(b.upiId) + '&pn=' + encodeURIComponent(b.payeeName || 'Vastrenix') + '&am=' + amount.toFixed(2) + '&cu=INR&tn=' + encodeURIComponent(note);
+  var b = billingCfg(); if (!b.upiId) return '';
+  return 'upi://pay?pa=' + encodeURIComponent(b.upiId) + '&pn=' + encodeURIComponent(b.payeeName) + '&am=' + (+amount).toFixed(2) + '&cu=INR&tn=' + encodeURIComponent(note);
 }
+function subNote(ic, txt) { return '<div class="note">' + icon(ic, 16) + '<span>' + esc(txt) + '</span></div>'; }
 function subSheet() {
-  watchSubRequest();
-  var sub = subState(), sel = S.subCycle || 'quarterly', plan = PLANS[sel] || PLANS.quarterly;
-  var req = subReqDoc(), step = S.subStep || 'plan';
+  watchBilling(); watchSubRequest();
+  var cfg = billingCfg(), sub = subState(), ps = plans(), avail = activePlans();
+  var sel = avail.indexOf(S.subCycle) >= 0 ? S.subCycle : (avail.indexOf('quarterly') >= 0 ? 'quarterly' : avail[0]);
+  var plan = ps[sel], req = subReqDoc(), step = S.subStep || 'plan';
+  var title = t('sub_title', 'Vastrenix Subscription');
   var head = '<div class="sub-head">' + logo(44) + '<b>vastrenix</b><p class="muted small">' + esc(t('sub_subtitle', 'Retail, wholesale and multi-branch management for garments.')) + '</p></div>';
-  if (sub.isActive) {
-    return sheetWrap(t('sub_title', 'Vastrenix Subscription'), '<div class="stack lg">' + head +
-      '<div class="banner ok"><span class="ic ok">' + icon('checkCircle', 18) + '</span><span class="tx"><b>' + esc(t('plan_active', 'Active Paid Plan')) + '</b><small>' + esc(t('plan_renews', 'Valid until {d}', { d: fmtDY(D.subscription.expiresAt) })) + '</small></span></div>' +
-      '<p class="small muted">' + esc(t('plan_renew_note', 'To renew early or change plan, contact support from More → Help.')) + '</p></div>', '<button class="btn primary lg" data-a="close">' + esc(t('done', 'Done')) + '</button>');
+  var activeBanner = sub.isActive ? '<div class="banner ok"><span class="ic ok">' + icon('checkCircle', 18) + '</span><span class="tx"><b>' + esc(t('plan_active', 'Active Paid Plan')) + ' · ' + esc(planName(D.subscription.cycleId)) + '</b><small>' + esc(t('plan_renews', 'Valid until {d}', { d: fmtDY(D.subscription.expiresAt) })) + '</small></span></div>' : '';
+
+  if (MODE === 'local' || !window.FS) return sheetWrap(title, '<div class="stack lg">' + head + subNote('cloud', t('sub_need_account', 'Subscriptions are linked to an online store account. Sign in with email to subscribe and keep your data backed up.')) + '</div>', '');
+  if (!ME.isOwner) return sheetWrap(title, '<div class="stack lg">' + head + activeBanner + subNote('lock', t('sub_owner_only', 'Only the store owner can change the subscription. Ask them to subscribe from More → Subscription.')) + '</div>', '');
+
+  /* Android app: payment happens on the website (or is hidden for Play Store builds) */
+  if (IS_NATIVE && !nativeInApp(cfg)) {
+    if (cfg.android === 'hidden' || !cfg.webAppUrl || (window.VX_NATIVE_CAPS && window.VX_NATIVE_CAPS.play)) {
+      return sheetWrap(title, '<div class="stack lg">' + head + activeBanner + subNote('info', t('sub_native_hidden', 'Plans are managed on the Vastrenix website. Contact support from More → Help if you need help with your plan.')) + '</div>', '<button class="btn primary lg" data-a="close">' + esc(t('done', 'Done')) + '</button>');
+    }
+    return sheetWrap(title, '<div class="stack lg">' + head + activeBanner + subNote('globe', t('sub_native_web', 'Plans are bought on the Vastrenix website. Sign in there with the same email; your plan updates here automatically.')) + '</div>',
+      '<button class="btn primary lg" data-a="subOpenWeb">' + icon('globe', 18) + esc(t('sub_open_web', 'Open website to subscribe')) + '</button>');
   }
-  if (MODE === 'local' || !window.FS) {
-    return sheetWrap(t('sub_title', 'Vastrenix Subscription'), '<div class="stack lg">' + head +
-      '<div class="note">' + icon('cloud', 16) + '<span>' + esc(t('sub_need_account', 'Subscriptions are linked to an online store account. Sign in with email to subscribe and keep your data backed up.')) + '</span></div></div>', '');
+
+  if (!avail.length || (!cfg.methods.razorpay && !cfg.methods.upi)) {
+    return sheetWrap(title, '<div class="stack lg">' + head + activeBanner + subNote('info', t('sub_paused', 'New subscriptions are paused right now. Contact support from More → Help.')) + '</div>', '');
   }
-  if (!ME.isOwner) {
-    return sheetWrap(t('sub_title', 'Vastrenix Subscription'), '<div class="stack lg">' + head +
-      '<div class="note">' + icon('lock', 16) + '<span>' + esc(t('sub_owner_only', 'Only the store owner can change the subscription. Ask them to subscribe from More → Subscription.')) + '</span></div></div>', '');
-  }
-  if (req && req.status === 'pending') {
-    var pp = PLANS[req.cycle] || plan;
-    return sheetWrap(t('sub_title', 'Vastrenix Subscription'), '<div class="stack lg">' + head +
-      '<div class="banner acc"><span class="ic acc">' + icon('clock', 18) + '</span><span class="tx"><b>' + esc(t('sub_verifying', 'Payment under verification')) + '</b><small>' + esc(t('sub_verifying_b', '{p} · {a} · UTR {u}. Usually verified within a few hours. Your store keeps working meanwhile.', { p: t(pp.label[0], pp.label[1]), a: inr(req.amount), u: req.utr })) + '</small></span></div></div>',
+  if (req && req.status === 'pending' && step !== 'pay') {
+    return sheetWrap(title, '<div class="stack lg">' + head + activeBanner +
+      '<div class="banner acc"><span class="ic acc">' + icon('clock', 18) + '</span><span class="tx"><b>' + esc(t('sub_verifying', 'Payment under verification')) + '</b><small>' + esc(t('sub_verifying_b', '{p} · {a} · UTR {u}. Usually verified within a few hours. Your store keeps working meanwhile.', { p: planName(req.cycle), a: inr(req.amount), u: req.utr })) + '</small></span></div></div>',
       '<button class="btn line" data-a="subEditReq">' + esc(t('sub_fix_utr', 'Correct UTR')) + '</button><button class="btn primary" data-a="close">' + esc(t('done', 'Done')) + '</button>');
   }
-  var rejected = req && req.status === 'rejected' ? '<div class="banner bad"><span class="ic bad">' + icon('alert', 18) + '</span><span class="tx"><b>' + esc(t('sub_rejected', 'We could not verify your last payment')) + '</b><small>' + esc(req.adminNote || t('sub_rejected_b', 'Check the UTR and submit again, or contact support.')) + '</small></span></div>' : '';
-  if (step === 'pay') {
-    var b = platformBilling(), f = S.f.subPay || (S.f.subPay = { utr: '', err: '' });
-    var note = 'Vastrenix ' + sel + ' ' + (storeV().code || '');
-    var url = upiPayUrl(plan.amount, note);
+  if (step === 'pay' && cfg.methods.upi) {
+    var f = S.f.subPay || (S.f.subPay = { utr: '', err: '' });
+    var url = upiPayUrl(plan.amount, 'Vastrenix ' + sel + ' ' + (storeV().code || ''));
     var payBlock = url
-      ? '<div class="payqr"><div class="qrbox" data-qr="' + esc(url) + '"></div><div class="stack xs" style="text-align:center"><b class="num" style="font-size:22px">' + inr(plan.amount) + '</b><span class="xsmall muted">' + esc(t('sub_pay_to', 'Pay to {u}', { u: b.upiId })) + '</span></div>' +
+      ? '<div class="payqr"><div class="qrbox" data-qr="' + esc(url) + '"></div><div class="stack xs" style="text-align:center"><b class="num" style="font-size:22px">' + inr(plan.amount) + '</b><span class="xsmall muted">' + esc(t('sub_pay_to', 'Pay to {u}', { u: cfg.upiId })) + '</span></div>' +
         '<a class="btn soft block" href="' + esc(url) + '">' + icon('qr', 17) + esc(t('sub_open_upi', 'Open UPI app')) + '</a></div>'
-      : '<div class="note">' + icon('info', 16) + '<span>' + esc(t('sub_no_upi', 'Online payment is not configured yet. Contact support to pay, then enter the reference below.')) + '</span></div>';
+      : subNote('info', t('sub_no_upi', 'Online payment is not configured yet. Contact support to pay, then enter the reference below.'));
     return sheetWrap(t('sub_pay_t', 'Pay {a}', { a: inr(plan.amount) }), '<div class="stack lg">' + payBlock +
       '<ol class="steps-list small"><li>' + esc(t('sub_s1', 'Scan the QR or tap Open UPI app and pay the exact amount.')) + '</li><li>' + esc(t('sub_s2', 'Copy the 12-digit UTR / UPI reference from your payment app.')) + '</li><li>' + esc(t('sub_s3', 'Enter it below. We activate your plan once the payment is verified.')) + '</li></ol>' +
       txtF(t('utr_ref', 'UTR / UPI reference'), 'f.subPay.utr', 'inputmode="numeric" autocomplete="off" maxlength="22" placeholder="e.g. 431298765432"', null, f.err) + '</div>',
       '<button class="btn line" data-a="subBack">' + esc(t('back', 'Back')) + '</button>' + busyBtn(t('sub_submit', 'Submit for verification'), 'doSubscribe', 'primary', '', 'sub'));
   }
-  return sheetWrap(t('sub_title', 'Vastrenix Subscription'),
-    '<div class="stack lg">' + head + rejected +
-      '<div class="stack sm" role="radiogroup" aria-label="' + esc(t('choose_plan', 'Choose a plan')) + '">' + planCard('monthly', sel) + planCard('quarterly', sel) + planCard('annual', sel) + '</div>' +
+  var rejected = req && req.status === 'rejected' ? '<div class="banner bad"><span class="ic bad">' + icon('alert', 18) + '</span><span class="tx"><b>' + esc(t('sub_rejected', 'We could not verify your last payment')) + '</b><small>' + esc(req.adminNote || t('sub_rejected_b', 'Check the UTR and submit again, or contact support.')) + '</small></span></div>' : '';
+  var extendNote = sub.isActive ? subNote('info', t('sub_extend_note', 'Buying now adds time after your current plan ends — you never lose days.')) : '';
+  var foot = (cfg.methods.razorpay ? busyBtn(t('sub_pay_rzp', 'Pay {a}', { a: inr(plan.amount) }), 'payRazorpay', 'primary lg block', '', null) : '') +
+    (cfg.methods.upi && !IS_NATIVE ? '<button class="btn ' + (cfg.methods.razorpay ? 'ghost' : 'primary lg') + ' block" data-a="subToPay"' + (S.busy ? ' disabled' : '') + '>' + (cfg.methods.razorpay ? esc(t('sub_upi_alt', 'Or pay by UPI QR and enter the UTR')) : esc(t('sub_continue', 'Continue — {a} {p}', { a: inr(plan.amount), p: t(PLAN_TEXT[sel].per[0], PLAN_TEXT[sel].per[1]) }))) + '</button>' : '');
+  return sheetWrap(title,
+    '<div class="stack lg">' + head + activeBanner + rejected + extendNote +
+      '<div class="stack sm" role="radiogroup" aria-label="' + esc(t('choose_plan', 'Choose a plan')) + '">' + avail.map(function (k) { return planCard(k, sel); }).join('') + '</div>' +
       '<div class="feats">' + [
         t('feat_1', 'Unlimited bills & WhatsApp invoices'),
         t('feat_2', 'Multi-location inventory (Shop + Godowns)'),
@@ -373,18 +582,87 @@ function subSheet() {
         t('feat_4', 'GST invoicing, thermal receipts & barcode scan'),
         t('feat_5', 'Real-time multi-counter sync & cloud backup')
       ].map(function (feat) { return '<div>' + icon('check', 15, 2.5) + '<span>' + esc(feat) + '</span></div>'; }).join('') + '</div>' +
-      '<span class="xsmall muted" style="text-align:center;display:block">' + esc(t('sub_guarantee2', 'Pay by any UPI app · Activated after verification · GST invoice on request')) + '</span>' +
-    '</div>',
-    '<button class="btn primary lg" data-a="subToPay">' + esc(t('sub_continue', 'Continue — {a} {p}', { a: inr(plan.amount), p: t(plan.per[0], plan.per[1]) })) + '</button>'
-  );
+      '<span class="xsmall muted" style="text-align:center;display:block">' + esc(cfg.methods.razorpay ? t('sub_rzp_note', 'Secure payment by Razorpay · UPI, cards, netbanking and wallets · Plan starts instantly') : t('sub_guarantee2', 'Pay by any UPI app · Activated after verification')) + '</span>' +
+    '</div>', '<div class="stack sm" style="width:100%">' + foot + '</div>');
 }
-A.setSubCycle = function (d) { if (PLANS[d.v]) S.subCycle = d.v; schedule(); };
+/* Calls the payment server with the signed-in user's Firebase ID token. */
+async function payApi(path, body) {
+  var u = window.FB_USER || (window.AUTH && window.AUTH.currentUser);
+  if (!u) throw fail(t('err_signin', 'Sign in again to continue.'));
+  var tok = await u.getIdToken(), r;
+  try { r = await fetch(billingCfg().apiBase + path, { method: 'POST', credentials: 'omit', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok }, body: JSON.stringify(body || {}) }); }
+  catch (e) { throw fail(t('err_net', 'Connection problem. Check your internet and try again.')); }
+  var j = {}; try { j = await r.json(); } catch (e) { }
+  if (!r.ok) throw fail(j.error || t('rzp_server', 'The payment server had a problem. Please try again.'));
+  return j;
+}
+A.payRazorpay = async function () {
+  var cfg = billingCfg();
+  if (S.busy || !cfg.methods.razorpay) return;
+  var avail = activePlans(), cycle = avail.indexOf(S.subCycle) >= 0 ? S.subCycle : (avail.indexOf('quarterly') >= 0 ? 'quarterly' : avail[0]);
+  if (IS_NATIVE) { if (nativeInApp(cfg)) await payInApp(cfg, cycle); return; }
+  S.busy = 'rzp'; schedule();
+  try {
+    var o = await payApi('/api/razorpay/create-order', { cycle: cycle });
+    await loadOne('https://checkout.razorpay.com/v1/checkout.js');
+    if (typeof window.Razorpay !== 'function') throw fail(t('rzp_load', 'Could not open the payment window. Check your internet and try again.'));
+    await new Promise(function (resolve) {
+      var settled = false; function done() { if (!settled) { settled = true; resolve(); } }
+      var rz = new window.Razorpay({
+        key: o.keyId, order_id: o.orderId, amount: o.amount, currency: o.currency,
+        name: 'Vastrenix', description: o.plan.label + ' · ' + o.storeName,
+        prefill: o.prefill, theme: { color: '#5B3DF5' }, retry: { enabled: true, max_count: 3 },
+        modal: { ondismiss: done, confirm_close: true, escape: true },
+        handler: async function (resp) {
+          S.busy = 'rzpv'; schedule();
+          try {
+            var v = await payApi('/api/razorpay/verify', { razorpay_order_id: resp.razorpay_order_id, razorpay_payment_id: resp.razorpay_payment_id, razorpay_signature: resp.razorpay_signature });
+            closeSheet();
+            if (v.held || !v.expiresAt) toast(t('rzp_held', 'Payment received. Your plan needs a quick check by our team — contact support if it isn’t active soon.'));
+            else toast(t('rzp_ok', 'Payment successful. Your plan is active until {d}.', { d: fmtDY(v.expiresAt) }));
+          } catch (e) {
+            toast(t('rzp_pending', 'Payment received — confirming it. Your plan will update in a minute. If it doesn’t, contact support with your payment ID.'), 'bad');
+          }
+          done();
+        }
+      });
+      rz.on('payment.failed', function (r) { toast(t('rzp_failed', 'Payment failed: {m}', { m: (r && r.error && r.error.description) || t('try_again', 'please try again') }), 'bad'); });
+      rz.open();
+    });
+  } catch (e) { toast(errText(e), 'bad'); }
+  S.busy = null; schedule();
+};
+/* Android app: the Razorpay SDK shows the checkout; the payment server prices the order and verifies the payment. */
+async function payInApp(cfg, cycle) {
+  S.busy = 'rzp'; schedule();
+  try {
+    var u = window.FB_USER || (window.AUTH && window.AUTH.currentUser);
+    if (!u) throw fail(t('err_signin', 'Sign in again to continue.'));
+    var tok = await u.getIdToken();
+    var r = await new Promise(function (resolve) {
+      window.vxNativePayResult = function (json) { window.vxNativePayResult = null; try { resolve(JSON.parse(json)); } catch (e) { resolve({ status: 'error' }); } };
+      if (!nativePost({ cmd: 'rzpPay', apiBase: cfg.webAppUrl, cycle: cycle, token: tok })) { window.vxNativePayResult = null; resolve({ status: 'error', message: t('rzp_update_app', 'Update the app to pay inside it, or pay on the website.') }); }
+    });
+    if (r.status === 'success') { closeSheet(); toast(t('rzp_ok', 'Payment successful. Your plan is active until {d}.', { d: fmtDY(r.expiresAt) })); }
+    else if (r.status === 'held') { closeSheet(); toast(t('rzp_held', 'Payment received. Your plan needs a quick check by our team — contact support if it isn’t active soon.')); }
+    else if (r.status === 'pending') toast(t('rzp_pending', 'Payment received — confirming it. Your plan will update in a minute. If it doesn’t, contact support with your payment ID.'), 'bad');
+    else if (r.status !== 'cancelled') toast(r.message || t('rzp_failed_generic', 'Payment failed. Please try again.'), 'bad');
+  } catch (e) { toast(errText(e), 'bad'); }
+  S.busy = null; schedule();
+}
+A.subOpenWeb = function () {
+  var u = billingCfg().webAppUrl; if (!/^https:\/\//.test(u)) return;
+  var url = u + '/app/#subscribe';
+  if (!(window.nativePost && nativePost({ cmd: 'open', url: url }))) window.open(url, '_blank', 'noopener,noreferrer');
+};
+A.setSubCycle = function (d) { if (activePlans().indexOf(d.v) >= 0) S.subCycle = d.v; schedule(); };
 A.subToPay = function () { S.subStep = 'pay'; S.f.subPay = { utr: '', err: '' }; schedule(); };
 A.subBack = function () { S.subStep = 'plan'; schedule(); };
-A.subEditReq = function () { var r = subReqDoc(); S.subCycle = (r && PLANS[r.cycle]) ? r.cycle : S.subCycle; S.subStep = 'pay'; S.f.subPay = { utr: (r && r.utr) || '', err: '' }; D.subRequest = Object.assign({}, r, { status: 'editing' }); schedule(); };
-A.openSubscribe = function () { S.subStep = 'plan'; openSheet('subscribe'); };
+A.subEditReq = function () { var r = subReqDoc(); if (r && activePlans().indexOf(r.cycle) >= 0) S.subCycle = r.cycle; S.subStep = 'pay'; S.f.subPay = { utr: (r && r.utr) || '', err: '' }; schedule(); };
+A.openSubscribe = function () { S.subStep = 'plan'; watchBilling(); openSheet('subscribe'); };
 A.doSubscribe = async function () {
-  var cycle = PLANS[S.subCycle] ? S.subCycle : 'quarterly', plan = PLANS[cycle];
+  if (IS_NATIVE || !billingCfg().methods.upi) return;
+  var avail = activePlans(), cycle = avail.indexOf(S.subCycle) >= 0 ? S.subCycle : (avail.indexOf('quarterly') >= 0 ? 'quarterly' : avail[0]), plan = plans()[cycle];
   var f = S.f.subPay || {}; f.err = '';
   var utr = String(f.utr || '').replace(/\s+/g, '').toUpperCase();
   if (!/^[A-Z0-9]{8,22}$/.test(utr)) { f.err = t('utr_err', 'Enter the UTR / reference exactly as shown in your payment app (8–22 letters or digits).'); schedule(); return; }
@@ -404,6 +682,14 @@ A.doSubscribe = async function () {
     toast(errText(e), 'bad');
   }
   S.busy = null; schedule();
+};
+/* Website link from the Android app (…/app/#subscribe) opens the plan sheet once the store has loaded. */
+window.vxAfterRender = function () {
+  if (S.subLinkDone || location.hash !== '#subscribe') return;
+  if (computeGate() !== 'app' || !ME.isOwner || MODE !== 'live') return;
+  S.subLinkDone = true;
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { }
+  A.openSubscribe();
 };
 
 /* ===================== CONTACT US & CUSTOM WORK ===================== */
@@ -643,7 +929,7 @@ function subPrivacy() {
 
       '<section class="card pad stack" style="gap:10px">' +
         '<h3 style="margin:0;font-size:16px">' + esc(t('p_s5_t', '5. Payment Processing & Subscriptions')) + '</h3>' +
-        '<p class="small muted" style="margin:0;line-height:1.6">Vastrenix plan subscriptions are processed through Razorpay Software Private Limited. Vastrenix does NOT collect, handle, or store debit/credit card numbers, CVVs, net banking credentials, or UPI MPINs. All payments are processed through Razorpay’s PCI-DSS Level 1 certified payment gateway (<a href="https://razorpay.com/privacy/" target="_blank" rel="noopener" style="color:var(--accent)">Razorpay Privacy Policy</a>).</p>' +
+        '<p class="small muted" style="margin:0;line-height:1.6">Vastrenix plans are paid through Razorpay (UPI, cards, netbanking, wallets) or by UPI directly to Vastrenix. Vastrenix does NOT collect, handle, or store debit/credit card numbers, CVVs, net banking credentials, or UPI PINs. We only receive the plan, the amount, the payment status and the payment or UTR reference, which we use to verify the payment and activate your plan.</p>' +
       '</section>' +
 
       '<section class="card pad stack" style="gap:10px;border-left:3px solid var(--accent)">' +

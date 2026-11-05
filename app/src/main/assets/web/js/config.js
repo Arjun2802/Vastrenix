@@ -16,6 +16,9 @@ window.VX_CONFIG = {
   billing: {
     upiId: '',            // e.g. 'vastrenix@okhdfcbank' — leave empty to ask owners to contact support
     payeeName: 'Vastrenix',
-    supportEmail: 'support@vastrenix.com'
+    supportEmail: 'contact@vastrenix.com',
+    /* Where the payment server (/api) lives. Leave '' when the app is served from the same Vercel site.
+       Plans, prices, payment methods, UPI ID and the website link are managed in the admin console → Settings. */
+    apiBase: ''
   }
 };

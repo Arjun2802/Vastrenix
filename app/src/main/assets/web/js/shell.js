@@ -24,7 +24,12 @@ function allowed(r) { var x = ROUTES[r]; if (!x) return false; if (r === 'settin
 function badgeFor(r) {
   if (r === 'dues') { var n = vals(D.customers).filter(function (c) { return (+c.balance || 0) > 0.5; }).length; return n || ''; }
   if (r === 'lowstock') return lowList().length || '';
-  if (r === 'dealers') return vals(D.dorders).filter(function (o) { return o.status === 'submitted'; }).length || '';
+  if (r === 'dealers') {
+    var bid = typeof currentBusinessId === 'function' ? currentBusinessId() : '';
+    var inc = vals(D.dorders).filter(function (o) { return (o.sellerBusinessId === bid || (!o.sellerBusinessId && !o.buyerBusinessId)) && o.status === 'submitted'; }).length;
+    var outDisp = vals(D.dorders).filter(function (o) { return o.buyerBusinessId === bid && o.status === 'dispatched'; }).length;
+    return (inc + outDisp) || '';
+  }
   if (r === 'staff') return vals(D.requests).filter(function (q) { return q.status === 'pending'; }).length || '';
   return '';
 }

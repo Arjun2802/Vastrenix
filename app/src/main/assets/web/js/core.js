@@ -179,7 +179,7 @@ function makeLocalDB() {
 var DB = null, USER = null, DL = null;
 var MODE = 'connecting'; // live | local
 var SESSION = uid('s');
-var D = { store: null, subscription: null, counters: null, products: {}, customers: {}, suppliers: {}, dealers: {}, ledger: {}, ledgerOld: {}, shifts: {}, pos: {}, dorders: {}, transfers: {}, held: {}, staff: {}, requests: {}, fabricJobs: {}, loaded: {}, err: {}, sync: 'live', profiles: {} };
+var D = { store: null, subscription: null, counters: null, products: {}, customers: {}, suppliers: {}, dealers: {}, ledger: {}, ledgerOld: {}, shifts: {}, pos: {}, dorders: {}, incomingOrders: {}, outgoingOrders: {}, dealerNotifs: [], transfers: {}, held: {}, staff: {}, requests: {}, fabricJobs: {}, loaded: {}, err: {}, sync: 'live', profiles: {} };
 var ME = { id: null, name: '', avatar: '', isOwner: false, canEdit: false, role: null, gate: 'boot', staffDoc: null, reqDoc: null };
 var S = { route: 'home', sub: null, sheet: null, toasts: [], q: {}, f: {}, ui: {}, busy: null, loc: lsGet('vx-loc') || null, boot: { db: 0, user: 0, data: 0 } };
 
@@ -213,6 +213,118 @@ function watchDoc(key, ref, cb) {
     schedule();
   }, function (e) { D.err[key] = (e && e.code) || 'unavailable'; D.loaded[key] = true; schedule(); }));
 }
+function clean(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
+function currentBusinessId() {
+  return (storeV() && (storeV().ownerId || storeV().id)) || ME.storeId || ME.id || 'store';
+}
+
+function doRef(id) {
+  if (window.FS) return window.FS.doc('dealerOrders/' + id);
+  return DB.doc('dealerOrders/' + id);
+}
+async function freshDO(id) {
+  var s = await doRef(id).get();
+  return s.exists ? clone(s.data()) : null;
+}
+function putDO(id, obj) {
+  return retry(function () { return doRef(id).set(clean(obj)); });
+}
+function patchDO(id, obj) {
+  return retry(function () { return doRef(id).update(clean(obj)); });
+}
+
+function startDealerOrderListeners() {
+  var bid = currentBusinessId();
+  if (!bid) return;
+  stopDealerOrderListeners();
+
+  var col = window.FS ? window.FS.collection('dealerOrders') : DB.collection('dealerOrders');
+  if (!col) return;
+
+  // Real-time listener 1: Incoming Orders (sellerBusinessId == current business)
+  var un1 = col.where('sellerBusinessId', '==', bid).onSnapshot(function (snap) {
+    handleDealerOrderSnapshot(snap, 'incoming');
+  }, function (e) {
+    console.warn('Incoming dealerOrders listener error', e);
+  });
+
+  // Real-time listener 2: Outgoing Orders (buyerBusinessId == current business)
+  var un2 = col.where('buyerBusinessId', '==', bid).onSnapshot(function (snap) {
+    handleDealerOrderSnapshot(snap, 'outgoing');
+  }, function (e) {
+    console.warn('Outgoing dealerOrders listener error', e);
+  });
+
+  S.dealerUnsubs = [un1, un2];
+}
+
+function stopDealerOrderListeners() {
+  if (S.dealerUnsubs && S.dealerUnsubs.length) {
+    S.dealerUnsubs.forEach(function (un) { try { if (typeof un === 'function') un(); } catch (e) {} });
+  }
+  S.dealerUnsubs = [];
+}
+
+function handleDealerOrderSnapshot(snap, type) {
+  if (!D.dorders) D.dorders = {};
+  if (!D.incomingOrders) D.incomingOrders = {};
+  if (!D.outgoingOrders) D.outgoingOrders = {};
+  if (!D.dealerNotifs) D.dealerNotifs = [];
+
+  var initial = !D.loaded.dorders;
+  (snap.docs || []).forEach(function (d) {
+    var o = Object.assign({}, d.data(), { id: d.id });
+    var old = D.dorders[d.id];
+    D.dorders[d.id] = o;
+    if (type === 'incoming') D.incomingOrders[d.id] = o;
+    else D.outgoingOrders[d.id] = o;
+
+    if (!initial && old && old.status !== o.status) {
+      notifyOrderStatusChange(o, old.status, type);
+    } else if (!initial && !old && type === 'incoming' && o.status === 'submitted') {
+      notifyOrderStatusChange(o, null, type);
+    }
+  });
+
+  D.loaded.dorders = true;
+  schedule();
+}
+
+function notifyOrderStatusChange(o, oldStatus, type) {
+  var msg = '', kind = 'acc';
+  var isBuyer = type === 'outgoing';
+  var isSeller = type === 'incoming';
+
+  if (isBuyer) {
+    if (o.status === 'accepted' || o.status === 'partial') {
+      msg = t('notif_do_accepted', 'Order {no} accepted by {s}. Stock reserved.', { no: o.no, s: o.sellerName || 'Seller' });
+      kind = 'acc';
+    } else if (o.status === 'packed') {
+      msg = t('notif_do_packed', 'Order {no} packed by {s}. Ready for dispatch.', { no: o.no, s: o.sellerName || 'Seller' });
+      kind = 'warn';
+    } else if (o.status === 'dispatched') {
+      msg = t('notif_do_dispatched', 'Order {no} dispatched by {s} via {c} · LR {lr}! Tap to confirm receipt.', { no: o.no, s: o.sellerName || 'Seller', c: o.carrier || 'Transporter', lr: o.lr || 'N/A' });
+      kind = 'ok';
+    } else if (o.status === 'rejected') {
+      msg = t('notif_do_rejected', 'Order {no} declined by {s}.', { no: o.no, s: o.sellerName || 'Seller' });
+      kind = 'bad';
+    }
+  } else if (isSeller) {
+    if (o.status === 'submitted' && !oldStatus) {
+      msg = t('notif_do_submitted', 'New order {no} received from {b} ({amt})!', { no: o.no, b: o.buyerName || 'Dealer', amt: inr(o.total) });
+      kind = 'acc';
+    } else if (o.status === 'delivered') {
+      msg = t('notif_do_delivered', 'Buyer {b} confirmed receipt of order {no}.', { no: o.no, b: o.buyerName || 'Buyer' });
+      kind = 'ok';
+    }
+  }
+
+  if (msg) {
+    D.dealerNotifs.unshift({ id: uid('n'), orderId: o.id, msg: msg, at: Date.now(), kind: kind, read: false });
+    toast(msg, kind === 'bad' ? 'bad' : 'ok');
+  }
+}
+
 function startData() {
   if (S.dataStarted) return; S.dataStarted = true;
   watchDoc('subscription', DB.doc('meta/subscription'));
@@ -224,7 +336,7 @@ function startData() {
   watchColl('ledger', DB.collection('ledger').orderBy('day', 'desc').limit(62));
   watchColl('shifts', DB.collection('shifts').orderBy('openAt', 'desc').limit(60));
   watchColl('pos', DB.collection('pos').orderBy('createdAt', 'desc').limit(300));
-  watchColl('dorders', DB.collection('dorders').orderBy('createdAt', 'desc').limit(300));
+  startDealerOrderListeners();
   watchColl('transfers', DB.collection('transfers').orderBy('at', 'desc').limit(150));
   watchColl('held', DB.collection('held'));
   watchColl('fabricJobs', DB.collection('fabricJobs').orderBy('queuedAt', 'desc').limit(100));
@@ -524,6 +636,7 @@ function postRender() {
   });
   document.querySelectorAll('[data-qr]').forEach(fillQR);
   document.querySelectorAll('.paperwrap[data-pw]').forEach(fitPaper);
+  if (window.vxAfterRender) { try { window.vxAfterRender(); } catch (e) { } }
 }
 function fillQR(el) {
   var txt = el.getAttribute('data-qr'); if (el.__qr === txt) return; el.__qr = txt; el.innerHTML = '';

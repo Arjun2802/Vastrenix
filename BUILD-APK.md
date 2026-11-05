@@ -52,6 +52,22 @@ keytool -genkeypair -v -keystore vastrenix-upload.jks -alias upload -keyalg RSA 
 
 ---
 
+## App ke andar Razorpay payment (APK)
+1. `gradle.properties` me apni website ka domain likhein (https:// ke bina):
+   ```
+   vxPaymentHost=vastrenix-web.vercel.app
+   ```
+   App login token **sirf isi domain** par bhejta hai. Khaali chhodne par app payment ke liye website kholta hai.
+2. Website ke admin panel → Settings → In the Android app → **Pay inside the app with Razorpay** → Save.
+3. Payment server (Vercel) aur Razorpay keys ka setup main project ki `RAZORPAY-SETUP.md` me hai.
+
+## Google Play Store ke liye build
+Play ki policy ki wajah se Play wale app me Razorpay nahi chalna chahiye. Play build hamesha aise banayein — isme payment kabhi nahi dikhega:
+```bash
+./gradlew bundleRelease -PvxDistribution=play
+```
+GitHub Actions me Play build chahiye to workflow ki build line me `-PvxDistribution=play` jodein.
+
 ## Har naye release se pehle
 - `app/build.gradle` me `appVersionCode` +1 karein (aur `appVersionName` badlein) — warna phone update nahi lega / Play reject karega.
 - Web app badla hai? Naya `www/` content `app/src/main/assets/web/` me replace karein.
@@ -69,3 +85,5 @@ Debug aur release alag apps ki tarah install hote hain (`com.vastrenix.app.debug
 | Target | Android 16 (API 36) |
 | Build | Gradle 8.11.1 · AGP 8.10.1 · Java 17 |
 | Permissions | sirf Internet + network state |
+| Payments | Razorpay Checkout SDK 1.6.40 (sirf direct APK build me) |
+| Version | 2.1.0 (code 11) |
