@@ -1,11 +1,11 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace "com.vastrenix.app"
+    namespace "com.vastrenix.pos"
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.vastrenix.app"
+        applicationId "com.vastrenix.pos"
         minSdk 24
         targetSdk 34
         versionCode 1

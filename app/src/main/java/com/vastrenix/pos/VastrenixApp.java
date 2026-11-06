@@ -1,4 +1,4 @@
-package com.vastrenix.app;
+package com.vastrenix.pos;
 
 import android.app.Application;
 import android.content.pm.ApplicationInfo;

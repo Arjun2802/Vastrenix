@@ -1,4 +1,4 @@
-package com.vastrenix.app;
+package com.vastrenix.pos;
 
 import android.content.ContentProvider;
 import android.content.ContentValues;
@@ -14,7 +14,7 @@ import java.io.File;
 import java.io.FileNotFoundException;
 
 public class VastrenixFileProvider extends ContentProvider {
-    public static final String AUTHORITY = "com.vastrenix.app.fileprovider";
+    public static final String AUTHORITY = "com.vastrenix.pos.fileprovider";
 
     public static Uri getUriForFile(Context context, File file) {
         return new Uri.Builder()

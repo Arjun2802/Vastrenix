@@ -1,22 +1,15 @@
 # VASTRENIX — PRIVACY POLICY
 
-**Effective Date:** October 30, 2026  
-**Last Updated:** October 30, 2026  
-**Public Hosted URL (Play Store):** [https://arjun2802.github.io/vastrenix-fabric-engine/privacy.html](https://arjun2802.github.io/vastrenix-fabric-engine/privacy.html)  
-**Repository Source:** [https://github.com/Arjun2802/vastrenix-fabric-engine/blob/main/PRIVACY-POLICY.md](https://github.com/Arjun2802/vastrenix-fabric-engine/blob/main/PRIVACY-POLICY.md)  
-**Contact & Grievance Desk:** [contact@vastrenix.com](mailto:contact@vastrenix.com)  
-
----
-
-> [!WARNING]
-> **LEGAL REVIEW ADVISORY:**
-> This privacy policy is drafted specifically for the actual architecture and feature set of the VASTRENIX B2B garment management application in compliance with India's **Digital Personal Data Protection Act (DPDPA), 2023**, the **Information Technology Act, 2000**, and the **Central Goods and Services Tax (CGST) Act, 2017**. This document should be formally reviewed by a qualified legal professional familiar with Indian commercial and data privacy law prior to publication, especially regarding the statutory tax-data retention periods and the Dealer Network B2B data-sharing provisions.
+**Effective Date:** November 2026  
+**Last Updated:** November 2026  
+**Official Privacy Policy URL:** [https://vastrenix.com/privacy/](https://vastrenix.com/privacy/)  
+**Contact & Support Desk:** [contact@vastrenix.com](mailto:contact@vastrenix.com)  
 
 ---
 
 ## 1. Introduction & Overview
 
-**Vastrenix** (“we”, “us”, “our”, or “the Platform”) is a specialized business-to-business (B2B) Point-of-Sale (POS), inventory management, and wholesale dealer networking platform developed for the apparel and textile trade in India. Vastrenix serves garment retail stores, designer boutiques, wholesale textile merchants, garment manufacturers, and authorized dealer networks.
+**Vastrenix** (“we”, “us”, “our”, or “the Platform”) is a specialized business-to-business (B2B) Point-of-Sale (POS), inventory management, and wholesale dealer networking platform developed for the apparel and textile trade. Vastrenix serves garment retail stores, designer boutiques, wholesale textile merchants, garment manufacturers, and authorized dealer networks.
 
 This Privacy Policy explains how personal data and business information are collected, processed, shared, stored, and protected when business owners (“Merchants”), authorized employees (“Staff Members”), and wholesale partners (“Dealers”) download, access, or use the Vastrenix mobile application, Android WebView client, web application, and related services (collectively, the “Services”).
 
@@ -58,7 +51,7 @@ Vastrenix collects only the data strictly necessary to deliver specialized garme
 
 ## 3. Purpose & Legal Basis for Data Processing
 
-We process personal and transactional data under lawful bases recognized by the DPDPA 2023, specifically for the performance of our contract with you, compliance with statutory tax obligations, and legitimate commercial operations:
+We process personal and transactional data under lawful bases, specifically for the performance of our contract with you, compliance with statutory tax obligations, and legitimate commercial operations:
 
 1. **Point-of-Sale Billing & Invoice Generation:** To calculate CGST, SGST, and IGST accurately, generate print-ready thermal receipts (58mm/80mm), format standardized A4/A5 PDF invoices, and facilitate direct digital invoice delivery via WhatsApp.
 2. **Multi-Location Inventory Management:** To synchronize garment inventory across physical stores and warehouses in real time, preventing double-selling across multiple checkout counters.
@@ -118,17 +111,17 @@ Data retention in Vastrenix is governed by operational necessity and mandatory s
 
 ---
 
-## 8. User Rights under the Digital Personal Data Protection Act (DPDPA), 2023
+## 8. User Rights & Data Control
 
-In accordance with India’s **Digital Personal Data Protection Act, 2023 (DPDPA)**, Data Principals (business owners, staff members, and customers whose information is processed) enjoy the following rights:
+Business owners, staff members, and customers whose information is processed enjoy the following rights:
 
 1. **Right to Access & Summary:** You have the right to request a summary of the personal data held about you and the processing activities undertaken.
 2. **Right to Correction & Updating:** You have the right to correct inaccurate, outdated, or incomplete personal data. Store owners and staff can update their business profile, product details, and contact information directly in the application settings.
 3. **Right to Erasure / Deletion:** You have the right to request the erasure of your personal data. We will delete or anonymize eligible personal information upon verification, **except** where retention is mandated by law (such as the 6-year GST invoice retention rule stipulated under Section 36 of the CGST Act).
-4. **Right to Grievance Redressal:** If you have questions, concerns, or unresolved issues regarding the handling of your data, you may lodge a formal grievance with our dedicated Grievance Desk.
+4. **Right to Grievance Redressal:** If you have questions, concerns, or unresolved issues regarding the handling of your data, you may lodge a formal request with our support desk.
 
 ### How to Exercise Your Rights:
-To exercise any of these statutory rights, send a written request from your registered email address to **[contact@vastrenix.com](mailto:contact@vastrenix.com)** with the subject line `"DPDPA Data Request"`. We will acknowledge your communication within **48 business hours** and complete verifiable requests within **30 calendar days**.
+To exercise any of these rights, send a written request from your registered email address to **[contact@vastrenix.com](mailto:contact@vastrenix.com)** with the subject line `"Privacy Data Request"`. We will acknowledge your communication within **48 business hours** and complete verifiable requests within **30 calendar days**.
 
 ---
 
@@ -160,7 +153,7 @@ We may update this Privacy Policy from time to time to reflect enhancements in o
 
 ## 12. Contact & Grievance Officer
 
-In accordance with the Information Technology Act, 2000, and the DPDPA 2023, the contact details of our Data Grievance Officer are provided below:
+The contact details of our Data Grievance Desk are provided below:
 
 - **Attn:** Data Protection & Grievance Desk  
 - **Entity:** Vastrenix Garment Technologies  

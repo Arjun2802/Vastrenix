@@ -24,7 +24,12 @@ function allowed(r) { var x = ROUTES[r]; if (!x) return false; if (r === 'settin
 function badgeFor(r) {
   if (r === 'dues') { var n = vals(D.customers).filter(function (c) { return (+c.balance || 0) > 0.5; }).length; return n || ''; }
   if (r === 'lowstock') return lowList().length || '';
-  if (r === 'dealers') return vals(D.dorders).filter(function (o) { return o.status === 'submitted'; }).length || '';
+  if (r === 'dealers') {
+    var bid = typeof currentBusinessId === 'function' ? currentBusinessId() : '';
+    var inc = vals(D.dorders).filter(function (o) { return (o.sellerBusinessId === bid || (!o.sellerBusinessId && !o.buyerBusinessId)) && o.status === 'submitted'; }).length;
+    var outDisp = vals(D.dorders).filter(function (o) { return o.buyerBusinessId === bid && o.status === 'dispatched'; }).length;
+    return (inc + outDisp) || '';
+  }
   if (r === 'staff') return vals(D.requests).filter(function (q) { return q.status === 'pending'; }).length || '';
   return '';
 }
@@ -56,9 +61,9 @@ function shell(body, nobar) {
     }).join('') + '</div>';
   }).join('');
   var side = '<aside class="side" aria-label="' + esc(t('main_nav', 'Main navigation')) + '"><div class="brand">' + logo(30) + '<b>vastrenix</b></div>' +
-    '<button class="storeSw" data-a="sheet" data-k="loc">' + (st.logo ? '<img class="av" src="' + esc(st.logo) + '" alt="' + esc(st.name || '') + '" style="object-fit:cover;border-radius:999px">' : '<span class="av">' + esc(initials(st.name)) + '</span>') + '<span class="grow"><b>' + esc(st.name || 'Vastrenix') + '</b><small>' + esc(locName(curLoc())) + '</small></span>' + icon('chevD', 16) + '</button>' +
+    '<button class="storeSw" data-a="sheet" data-k="loc">' + (st.logo ? '<img class="av" src="' + esc(safeImg(st.logo)) + '" alt="' + esc(st.name || '') + '" style="object-fit:cover;border-radius:999px">' : '<span class="av">' + esc(initials(st.name)) + '</span>') + '<span class="grow"><b>' + esc(st.name || 'Vastrenix') + '</b><small>' + esc(locName(curLoc())) + '</small></span>' + icon('chevD', 16) + '</button>' +
     (allowed('bill') ? '<a class="btn primary block" href="#bill" data-a="go" data-r="bill" style="margin-bottom:16px">' + icon('plus', 18, 2.2) + esc(t('nav_bill', 'New bill')) + '</a>' : '') +
-    nav + '<div class="sideFoot">' + syncLine() + '<div class="me">' + (ME.avatar ? '<img src="' + esc(ME.avatar) + '" alt="">' : avatarHtml(ME.name || 'You')) + '<span><b>' + esc(ME.name || t('you', 'You')) + '</b><small>' + esc(roleName(ME.role)) + '</small></span></div></div></aside>';
+    nav + '<div class="sideFoot">' + syncLine() + '<div class="me">' + (ME.avatar ? '<img src="' + esc(safeImg(ME.avatar)) + '" alt="">' : avatarHtml(ME.name || 'You')) + '<span><b>' + esc(ME.name || t('you', 'You')) + '</b><small>' + esc(roleName(ME.role)) + '</small></span></div></div></aside>';
   var tabs = ['home', 'items', 'bill', 'invoices', 'dealers', 'more'].filter(allowed);
   if (tabs.length > 5) tabs = tabs.filter(function (x) { return x !== 'dealers'; });
   while (tabs.length > 5) tabs.splice(tabs.length - 2, 1);
@@ -89,7 +94,7 @@ function gateView(g) {
           '<div style="font-weight:700;color:#FFF;font-size:14px;margin-bottom:6px">⚠️ Cloud Firestore Database Not Created Yet</div>' +
           '<div style="color:#E5E7EB;font-size:13px;line-height:1.5">In Firebase Console, go to <b>Build → Firestore Database</b> and click <b>Create database</b> (select location <b>asia-south1 (Mumbai)</b>, Production mode). Once created, this screen will open automatically.</div>' +
           '<div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap">' +
-            '<button class="btn strong sm" onclick="location.reload()">Retry Connection</button>' +
+            '<button class="btn strong sm" data-a="reload">Retry Connection</button>' +
             '<button class="btn soft sm" data-a="useOfflineMode">Open Demo Store (Offline)</button>' +
           '</div>' +
         '</div>' : '') +
@@ -184,7 +189,7 @@ A.obNext = async function () {
       name: f.name.trim(), city: f.city.trim(), phone: phoneDigits(f.phone), address: String(f.address || '').trim(), gstin: gst, stateCode: gst ? gst.slice(0, 2) : '', state: gstState(gst),
       defaultGst: +f.gst, priceIncl: !!f.incl, locations: locations, upi: String(f.upi || '').trim(), prefix: (String(f.prefix || '').trim() || prefixFor(f.name)).toUpperCase(),
       invoice: { theme: f.theme, showLogo: true, showQr: true, footer: f.footer || '' }, defaultPay: f.pay, remind: !!f.remind,
-      categories: ['Kurtas', 'Sarees', 'Dupattas', 'Bottoms', 'Menswear', 'Kidswear', 'Fabric'], code: 'VX-' + prefixFor(f.name) + '-' + Math.random().toString(36).slice(2, 6).toUpperCase(),
+      categories: ['Kurtas', 'Sarees', 'Dupattas', 'Bottoms', 'Menswear', 'Kidswear', 'Fabric'], code: 'VX-' + prefixFor(f.name) + '-' + Math.random().toString(36).slice(2, 6).toUpperCase().padEnd(4, '0'),
       ownerId: ME.id || null, ownerName: ME.name || '', createdAt: Date.now()
     });
     // Create 7-day free trial subscription document for new business
@@ -205,10 +210,13 @@ A.obNext = async function () {
       };
       await put('meta/subscription', subDoc);
       if (window.FS) {
-        await window.FS.doc('subscriptions/' + ME.id).set(subDoc, { merge: true });
+        try { await window.FS.doc('subscriptions/' + ME.id).set(subDoc, { merge: true }); } catch (e) { console.warn('subscription mirror not created', e); }
       }
     }
-    if (window.VX_onStoreCreated) { var sNow = await fresh('meta/store'); await window.VX_onStoreCreated(sNow.code, sNow.name); }
+    if (window.VX_onStoreCreated) {
+      var sNow = await fresh('meta/store');
+      for (var ci = 0; ci < 5 && !(await window.VX_onStoreCreated(sNow.code, sNow.name)); ci++) { sNow.code = 'VX-' + prefixFor(sNow.name) + '-' + Math.random().toString(36).slice(2, 6).toUpperCase().padEnd(4, '0'); await put('meta/store', sNow); }
+    }
     if (!(await fresh('meta/counters'))) await put('meta/counters', { inv: 0, cn: 0, po: 0, do: 0, tr: 0 });
     if (f.demo) await loadDemo();
     S.f.ob = null; toast(t('ob_done', 'Store is ready. Make your first bill.'));
@@ -243,7 +251,7 @@ function vHome() {
     (can('stock') || can('purchase') ? '<a href="#purchases" data-a="go" data-r="purchases">' + icon('package', 22) + esc(t('receive', 'Receive')) + '</a>' : '') +
     (can('money') ? '<button data-a="sheet" data-k="expense">' + icon('wallet', 22) + esc(t('expense', 'Expense')) + '</button>' : allowed('customers') ? '<a href="#customers" data-a="go" data-r="customers">' + icon('users', 22) + esc(t('nav_customers', 'Customers')) + '</a>' : '') + '</div>';
   var banners = '';
-  if (MODE === 'local') banners += '<div class="banner warn">' + '<span class="ic warn">' + icon('cloud', 18) + '</span><span class="tx"><b>' + esc(t('local_t', 'Offline preview')) + '</b><small>' + esc(t('local_b', 'Data is saved in this browser only. Open the shared link to sync with your team.')) + '</small></span></div>';
+  if (MODE === 'local') banners += '<div class="banner warn">' + '<span class="ic warn">' + icon('cloud', 18) + '</span><span class="tx"><b>' + esc(t('local_t', 'Offline preview')) + '</b><small>' + esc(t('local_b2', 'Data is saved on this device only. Sign in with an online account to back it up and sync with your team.')) + '</small></span></div>';
   var reqs = vals(D.requests).filter(function (q) { return q.status === 'pending'; });
   if (reqs.length && allowed('staff')) banners += '<a class="banner" href="#staff" data-a="go" data-r="staff"><span class="ic acc">' + icon('userPlus', 18) + '</span><span class="tx"><b>' + esc(t('staff_req_n', '{n} staff waiting for approval', { n: reqs.length })) + '</b><small>' + esc(reqs.map(function (q) { return q.name + ' · ' + roleName(q.role); }).slice(0, 2).join(', ')) + '</small></span>' + icon('chevR', 18) + '</a>';
   var dueC = vals(D.customers).filter(function (c) { return (+c.balance || 0) > 0.5; });
@@ -342,7 +350,7 @@ function vMore() {
         : ''));
 
   var profileCard = '<div class="card pad rowx">' +
-    (ME.avatar ? '<img class="avatar" style="width:52px;height:52px;border-radius:16px" src="' + esc(ME.avatar) + '" alt="">' : '<span class="ic" style="width:52px;height:52px;border-radius:16px;background:var(--strong);color:var(--strong-fg);font-size:17px">' + esc(initials(ME.name || 'You')) + '</span>') +
+    (ME.avatar ? '<img class="avatar" style="width:52px;height:52px;border-radius:16px" src="' + esc(safeImg(ME.avatar)) + '" alt="">' : '<span class="ic" style="width:52px;height:52px;border-radius:16px;background:var(--strong);color:var(--strong-fg);font-size:17px">' + esc(initials(ME.name || 'You')) + '</span>') +
     '<span class="grow"><span style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:17px">' + esc(ME.name || t('you', 'You')) + '</b>' + ownerBadge + '</span><br><span class="small muted">' + esc(roleName(ME.role) + ' · ' + (storeV().name || '')) + '</span></span>' +
     (allowed('settings') ? '<a class="ib" href="#settings" data-a="go" data-r="settings" aria-label="' + esc(t('nav_settings', 'Settings')) + '">' + icon('settings', 19) + '</a>' : '') +
   '</div>';
@@ -356,10 +364,9 @@ function vMore() {
     '<section class="stack sm"><div class="sect"><h2>' + esc(t('this_device', 'This device')) + '</h2></div><div class="card pad stack">' + fld(t('language', 'Language'), langSeg()) + fld(t('appearance', 'Appearance'), themeSeg()) + '<button class="btn line" data-a="sheet" data-k="loc">' + icon('mapPin', 17) + esc(t('selling_from', 'Selling from: {l}', { l: locName(curLoc()) })) + '</button>' + syncLine() + '</div></section></div>';
 }
 A.openSub = function (d) { openSub(d.k, d); };
-A.openSubscribe = function () { openSheet('subscribe'); };
 A.dismissTrialBanner = function () { S.dismissTrialBanner = true; schedule(); };
 function langSeg() { return '<div class="seg" role="radiogroup" aria-label="' + esc(t('language', 'Language')) + '">' + [['en', 'English'], ['hi', 'हिन्दी'], ['gu', 'ગુજરાતી']].map(function (l) { return '<button type="button" role="radio" aria-checked="' + (LANG === l[0]) + '" class="' + (LANG === l[0] ? 'on' : '') + '" data-a="setLang" data-v="' + l[0] + '">' + l[1] + '</button>'; }).join('') + '</div>'; }
 function themeSeg() { var v = lsGet('vx-theme') || 'system'; return '<div class="seg" role="radiogroup" aria-label="' + esc(t('appearance', 'Appearance')) + '">' + [['system', t('th_system', 'System')], ['light', t('th_light', 'Light')], ['dark', t('th_dark', 'Dark')]].map(function (l) { return '<button type="button" role="radio" aria-checked="' + (v === l[0]) + '" class="' + (v === l[0] ? 'on' : '') + '" data-a="setTheme" data-v="' + l[0] + '">' + esc(l[1]) + '</button>'; }).join('') + '</div>'; }
 A.setLang = function (d) { LANG = d.v; lsSet('vx-lang', LANG); memoCache = {}; schedule(); };
 A.setTheme = function (d) { lsSet('vx-theme', d.v === 'system' ? null : d.v); applyTheme(); schedule(); };
-function applyTheme() { var v = lsGet('vx-theme'); if (v === 'light' || v === 'dark') document.documentElement.setAttribute('data-theme', v); else document.documentElement.removeAttribute('data-theme'); }
+function applyTheme() { var v = lsGet('vx-theme'); if (v === 'light' || v === 'dark') document.documentElement.setAttribute('data-theme', v); else document.documentElement.removeAttribute('data-theme'); if (window.vxNativeUi) setTimeout(window.vxNativeUi, 0); }

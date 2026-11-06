@@ -111,10 +111,19 @@ function authErr(e) {
   return (e && e.message) || t('err_generic', 'Something went wrong. Try again.');
 }
 function gateLogin() {
+  var delMsg = window.__vxDeletedMessage || '';
+  if (!delMsg && typeof sessionStorage !== 'undefined') {
+    delMsg = sessionStorage.getItem('vx_del_msg') || '';
+    if (delMsg) {
+      try { sessionStorage.removeItem('vx_del_msg'); } catch (e) {}
+      window.__vxDeletedMessage = delMsg;
+    }
+  }
   var f = S.f.login || (S.f.login = { mode: 'in', name: '', email: '', pass: '', show: false, err: '' });
   var up = f.mode === 'up';
   return '<div class="gate"><div class="box">' +
     '<div class="between"><div class="rowx">' + logo(36) + '<b style="font-size:20px;letter-spacing:-.04em">vastrenix</b></div>' + langMini() + '</div>' +
+    (delMsg ? '<div class="banner ok" style="margin-top:16px"><span class="ic ok">' + icon('checkCircle', 18) + '</span><span class="tx"><b>' + esc(delMsg) + '</b></span></div>' : '') +
     '<div class="stack sm" style="padding-top:24px"><h1 style="font-size:30px">' + esc(up ? t('li_up_t', 'Create your account') : t('li_in_t', 'Sign in to your store')) + '</h1><p class="muted">' + esc(up ? t('li_up_b', 'Owners create a store next. Staff join an existing store with its code.') : t('li_in_b', 'Billing, stock and dealer orders — wherever you are.')) + '</p></div>' +
     '<form class="stack" data-form="1">' + (up ? txtF(t('full_name', 'Full name'), 'f.login.name', 'autocomplete="name"') : '') +
     fld(t('email', 'Email'), '<div class="inwrap"><span class="lead">' + icon('mail', 19) + '</span>' + inp('f.login.email', 'type="email" autocomplete="email" inputmode="email"') + '</div>', null, null, 'f-f-login-email') +
@@ -189,8 +198,29 @@ function vxExtraMore() {
   return '<section class="stack sm"><div class="sect"><h2>' + esc(t('account', 'Account')) + '</h2></div><div class="card pad stack">' +
     '<div class="between small"><span class="muted">' + esc(t('email', 'Email')) + '</span><b>' + esc((FB_USER && FB_USER.email) || '') + '</b></div>' +
     (st.code ? '<div class="between small"><span class="muted">' + esc(t('store_code', 'Store code')) + '</span><button class="btn soft xs" data-a="copy" data-v="' + esc(st.code) + '">' + icon('copy', 14) + esc(st.code) + '</button></div>' : '') +
-    '<button class="btn danger" data-a="signOut">' + icon('logout', 17) + esc(t('sign_out', 'Sign out')) + '</button></div></section>';
+    '<button class="btn danger" data-a="signOut">' + icon('logout', 17) + esc(t('sign_out', 'Sign out')) + '</button>' +
+    '<div class="between small" style="margin-top:8px;padding-top:12px;border-top:1px solid var(--line)">' +
+      '<span class="muted">' + esc(t('danger_zone', 'Account')) + '</span>' +
+      '<button class="btn ghost xs danger" data-a="askDeleteAccount">' + icon('trash', 14) + esc(t('del_account', 'Delete account')) + '</button>' +
+    '</div>' +
+    '</div></section>';
 }
+
+A.askDeleteAccount = function () {
+  var isNative = !!(window.IS_NATIVE || window.VastrenixNative || (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()));
+  if (isNative) {
+    var url = 'https://vastrenix.com/delete-account/';
+    if (!(window.nativePost && nativePost({ cmd: 'open', url: url }))) {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+    return;
+  }
+  S.f = S.f || {};
+  S.f.delPwd = '';
+  S.f.delConfirm = '';
+  S.f.delErr = '';
+  openSheet('delAcc');
+};
 
 /* ---- store entry after sign-in ---- */
 function enterStore(sid) {

@@ -6,9 +6,9 @@
 }
 
 # Keep MainActivity and custom FileProvider
--keep class com.vastrenix.app.MainActivity { *; }
--keep class com.vastrenix.app.MainActivity$VastrenixNativeBridge { *; }
--keep class com.vastrenix.app.VastrenixFileProvider { *; }
+-keep class com.vastrenix.pos.MainActivity { *; }
+-keep class com.vastrenix.pos.MainActivity$VastrenixNativeBridge { *; }
+-keep class com.vastrenix.pos.VastrenixFileProvider { *; }
 
 # Keep Android WebKit classes
 -keep public class * extends android.webkit.WebChromeClient { *; }

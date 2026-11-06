@@ -457,7 +457,123 @@ A.gGo = function (d) { closeSheet(); go(d.r); };
 function confirmSheet(sh) { return sheetWrap(sh.title, '<p style="font-size:15px;line-height:1.5">' + esc(sh.msg) + '</p>', '<button class="btn line" data-a="close">' + esc(t('cancel', 'Cancel')) + '</button><button class="btn ' + (sh.danger ? 'danger' : 'primary') + '" data-a="' + sh.act + '">' + esc(sh.yes) + '</button>'); }
 function billThemeSheet() { return sheetWrap(t('invoice_theme', 'Invoice theme'), themePicker('bill.theme'), '<button class="btn primary lg" data-a="close">' + esc(t('done', 'Done')) + '</button>', true); }
 
-var SHEETS = { checkout: coView, saleDone: doneView, variant: variantSheet, line: lineSheet, custom: customSheet, disc: discSheet, custPick: custPickSheet, held: heldSheet, billTheme: billThemeSheet, pmore: pmoreSheet, count: countSheet, supplier: supplierSheet, supPay: supPaySheet, utr: utrSheet, cn: cnSheet, collect: collectSheet, custEdit: custEditSheet, expense: expenseSheet, cashEntry: cashEntrySheet, dealer: dealerSheet, dispatch: dispatchSheet, rejectDO: rejectSheet, deliverDO: deliverSheet, loc: locSheet, search: searchSheet, alerts: alertsSheet, confirm: confirmSheet, subscribe: subSheet, fabricDrape: fabricDrapeSheet };
+function delAccSheet() {
+  var isOwner = !!(ME.isOwner || ME.role === 'owner');
+  var f = S.f || {};
+  var warnMsg = isOwner
+    ? t('del_warn_owner', "Your login and your whole store — items, stock, bills, customers, khata, dealers, staff access, and settings — will be deleted for everyone. Remaining paid plan time is not refunded.")
+    : t('del_warn_staff', "Your login will be deleted and you will lose access to this store. The store’s data stays with the owner.");
+
+  var body = '<div class="stack md">' +
+    '<div class="banner bad" style="align-items:flex-start;gap:12px;background:rgba(216,58,82,0.12);border:1px solid rgba(216,58,82,0.35);border-radius:12px;padding:14px">' +
+      '<span class="ic bad" style="margin-top:2px;color:var(--bad)">' + icon('alert', 22) + '</span>' +
+      '<div class="tx">' +
+        '<b style="font-size:15px;color:var(--bad)">⚠️ ' + esc(t('del_cant_undo', "This can't be undone")) + '</b>' +
+        '<div style="font-size:13.5px;margin-top:6px;line-height:1.5">' + esc(warnMsg) + '</div>' +
+      '</div>' +
+    '</div>' +
+    '<div class="stack sm">' +
+      '<label class="lbl" for="del_acc_pwd"><b>' + esc(t('password', 'Password')) + ':</b></label>' +
+      '<div class="inwrap"><span class="lead">' + icon('lock', 18) + '</span>' +
+      '<input type="password" id="del_acc_pwd" class="inp" placeholder="•••••••••••••••" autocomplete="current-password" value="' + esc(f.delPwd || '') + '" oninput="S.f.delPwd=this.value">' +
+      '</div>' +
+    '</div>' +
+    '<div class="stack sm">' +
+      '<label class="lbl" for="del_acc_confirm"><b>' + esc(t('type_delete_to_confirm', 'Type DELETE to confirm:')) + '</b></label>' +
+      '<div class="inwrap"><span class="lead">' + icon('trash', 18) + '</span>' +
+      '<input type="text" id="del_acc_confirm" class="inp" placeholder="DELETE" autocomplete="off" autocapitalize="characters" value="' + esc(f.delConfirm || '') + '" oninput="S.f.delConfirm=this.value">' +
+      '</div>' +
+    '</div>' +
+    (f.delErr ? '<div class="banner bad" style="margin-top:8px"><span class="ic bad">' + icon('alert', 17) + '</span><span class="tx"><b>' + esc(f.delErr) + '</b></span></div>' : '') +
+  '</div>';
+
+  var foot = '<div class="between" style="gap:12px;width:100%">' +
+    '<button class="btn line" data-a="close">' + esc(t('cancel', 'Cancel')) + '</button>' +
+    busyBtn(icon('trash', 16) + ' ' + esc(t('del_permanently', 'Delete permanently (Danger)')), 'doDeleteAccount', 'danger', '', 'delAcc') +
+  '</div>';
+
+  return sheetWrap(t('del_account_title', 'Delete your account'), body, foot);
+}
+
+A.doDeleteAccount = async function () {
+  var f = S.f || {};
+  var pwd = String(f.delPwd || '').trim();
+  var confirm = String(f.delConfirm || '').trim().toUpperCase();
+  if (!pwd) {
+    f.delErr = t('del_err_pwd', 'Please enter your password.');
+    schedule();
+    return;
+  }
+  if (confirm !== 'DELETE') {
+    f.delErr = t('del_err_confirm', 'Please type DELETE to confirm.');
+    schedule();
+    return;
+  }
+  var u = window.FB_USER || (window.AUTH && window.AUTH.currentUser);
+  if (!u || !u.email) {
+    toast(t('err_signin', 'Sign in again to continue.'), 'bad');
+    return;
+  }
+  S.busy = 'delAcc';
+  f.delErr = '';
+  schedule();
+  try {
+    var cred = firebase.auth.EmailAuthProvider.credential(u.email, pwd);
+    await u.reauthenticateWithCredential(cred);
+
+    var tok = await u.getIdToken(true);
+    var resp, body = { confirm: 'DELETE' };
+    try {
+      resp = await fetch(billingCfg().apiBase + '/api/account/delete', {
+        method: 'POST',
+        credentials: 'omit',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + tok
+        },
+        body: JSON.stringify(body)
+      });
+    } catch (netErr) {
+      throw new Error(t('err_net', 'Connection problem. Check your internet and try again.'));
+    }
+    var resData = {};
+    try { resData = await resp.json(); } catch (e) {}
+    if (!resp.ok) {
+      if (resp.status === 401 && resData.error === 'reauth_required') {
+        throw new Error(t('del_err_reauth', 'Recent login required. Please sign in again before deleting your account.'));
+      }
+      if (resp.status === 403 && resData.error === 'is_admin') {
+        throw new Error(t('del_err_admin', 'Platform administrator accounts cannot be deleted here.'));
+      }
+      throw new Error(resData.error || resData.message || t('del_err_generic', 'Failed to delete account. Please try again.'));
+    }
+
+    var successMsg = 'Your account has been deleted. Your data has been removed from Vastrenix.';
+    try { localStorage.clear(); } catch (e) {}
+    try {
+      sessionStorage.clear();
+      sessionStorage.setItem('vx_del_msg', successMsg);
+    } catch (e) {}
+    window.__vxDeletedMessage = successMsg;
+    closeSheet();
+    try { await window.AUTH.signOut(); } catch (e) {}
+    try { location.hash = ''; } catch (e) {}
+    ME.gate = 'login';
+    schedule();
+    toast(successMsg, 'ok');
+  } catch (err) {
+    S.busy = null;
+    var c = (err && err.code) || '';
+    if (/wrong-password|invalid-credential/.test(c)) {
+      f.delErr = t('ae_cred', 'Email or password is wrong.');
+    } else {
+      f.delErr = err.message || t('err_generic', 'Something went wrong. Try again.');
+    }
+    schedule();
+  }
+};
+
+var SHEETS = { checkout: coView, saleDone: doneView, variant: variantSheet, line: lineSheet, custom: customSheet, disc: discSheet, custPick: custPickSheet, held: heldSheet, billTheme: billThemeSheet, pmore: pmoreSheet, count: countSheet, supplier: supplierSheet, supPay: supPaySheet, utr: utrSheet, cn: cnSheet, collect: collectSheet, custEdit: custEditSheet, expense: expenseSheet, cashEntry: cashEntrySheet, dealer: dealerSheet, dispatch: dispatchSheet, rejectDO: rejectSheet, deliverDO: deliverSheet, loc: locSheet, search: searchSheet, alerts: alertsSheet, confirm: confirmSheet, subscribe: subSheet, fabricDrape: fabricDrapeSheet, delAcc: delAccSheet };
 function sheetView() { var f = SHEETS[S.sheet.k]; if (!f) return ''; try { return f(S.sheet) || ''; } catch (e) { console.error(e); return sheetWrap(t('err_render', 'This screen hit a problem.'), '<p class="small muted">' + esc(e.message) + '</p>', ''); } }
 A.sheet = function (d) { var o = {}; Object.keys(d).forEach(function (k) { o[k] = d[k]; }); openSheet(d.k, o); };
 var SUBS = { product: subProduct, pform: subPform, tform: subTform, poform: subPOform, po: subPO, receive: subReceive, supplier: subSupplier, invoice: subInvoice, customer: subCustomer, doform: subDOform, doOutForm: subDOOutgoingForm, dorder: subDO, contact: subContact, about: subAbout, privacy: subPrivacy };
@@ -891,13 +1007,13 @@ function subPrivacy() {
     '<div class="stack lg" style="max-width:760px;margin:0 auto;padding-bottom:32px">' +
       '<div class="card pad stack" style="background:var(--accent-soft);border:1px solid var(--line);gap:10px">' +
         '<div class="between">' +
-          '<div class="rowx" style="gap:8px">' + icon('shield', 20) + '<b style="font-size:15px">' + esc(t('privacy_badge', 'DPDPA 2023 & Play Store Compliant')) + '</b></div>' +
-          '<span class="pill ok">' + esc(t('privacy_status', 'October 2026')) + '</span>' +
+          '<div class="rowx" style="gap:8px">' + icon('shield', 20) + '<b style="font-size:15px">' + esc(t('privacy_badge', 'Privacy & Data Protection')) + '</b></div>' +
+          '<span class="pill ok">' + esc(t('privacy_status', 'Updated 2026')) + '</span>' +
         '</div>' +
-        '<p class="small" style="margin:0;line-height:1.5">' + esc(t('privacy_notice_top', 'Vastrenix is committed to transparent, lawful, and secure handling of data for garment retail and wholesale businesses. This policy outlines what data is collected, why, where it is stored, and your rights under Indian data protection law.')) + '</p>' +
+        '<p class="small" style="margin:0;line-height:1.5">' + esc(t('privacy_notice_top', 'Vastrenix is committed to transparent, lawful, and secure handling of data for garment retail and wholesale businesses. This policy outlines what data is collected, why, where it is stored, and your rights.')) + '</p>' +
         '<div class="rowx wrap" style="gap:8px;margin-top:2px">' +
           '<button class="btn primary sm" data-a="copyPrivacyUrl">' + icon('share', 15) + esc(t('view_online_policy', 'Copy Public URL')) + '</button>' +
-          '<a href="https://arjun2802.github.io/vastrenix-fabric-engine/privacy.html" target="_blank" rel="noopener" class="btn line sm" style="text-decoration:none">' + icon('globe', 15) + esc(t('open_browser', 'Open in Browser')) + '</a>' +
+          '<a href="https://vastrenix.com/privacy/" target="_blank" rel="noopener" class="btn line sm" style="text-decoration:none">' + icon('globe', 15) + esc(t('open_browser', 'Open in Browser')) + '</a>' +
         '</div>' +
       '</div>' +
 
@@ -943,8 +1059,8 @@ function subPrivacy() {
       '</section>' +
 
       '<section class="card pad stack" style="gap:10px">' +
-        '<h3 style="margin:0;font-size:16px">' + esc(t('p_s8_t', '8. User Rights under DPDPA 2023')) + '</h3>' +
-        '<p class="small muted" style="margin:0;line-height:1.6">Under India’s Digital Personal Data Protection Act (DPDPA), 2023, you have the right to: (a) request access to a summary of your personal data processed; (b) request correction or updating of inaccurate data; (c) request deletion of personal data (subject to mandatory GST record-keeping obligations); and (d) seek grievance redressal by contacting contact@vastrenix.com. We acknowledge requests within 48 hours and resolve verifiable requests within 30 days.</p>' +
+        '<h3 style="margin:0;font-size:16px">' + esc(t('p_s8_t', '8. User Rights & Data Control')) + '</h3>' +
+        '<p class="small muted" style="margin:0;line-height:1.6">You have the right to: (a) request access to a summary of your personal data processed; (b) request correction or updating of inaccurate data; (c) request deletion of personal data (subject to mandatory GST record-keeping obligations); and (d) seek assistance or grievance redressal by contacting contact@vastrenix.com. We acknowledge requests within 48 hours and resolve verifiable requests promptly.</p>' +
       '</section>' +
 
       '<section class="card pad stack" style="gap:10px">' +
@@ -960,7 +1076,7 @@ function subPrivacy() {
 }
 
 A.copyPrivacyUrl = function () {
-  var url = 'https://arjun2802.github.io/vastrenix-fabric-engine/privacy.html';
+  var url = 'https://vastrenix.com/privacy/';
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(url).then(function () {
       toast(t('policy_copied', 'Privacy policy URL copied!'));

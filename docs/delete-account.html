@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Delete Account & Data — Vastrenix</title>
+  <meta name="description" content="Request deletion of your Vastrenix account and associated store data in compliance with Google Play and Indian statutory data regulations.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0B0B0F;
+      --surface: #15151B;
+      --surface2: #1D1D25;
+      --line: #25252E;
+      --fg: #F0EFF6;
+      --muted: #8E8D9A;
+      --accent: #7A63FF;
+      --accent-soft: #231C4C;
+      --ok: #5BE3A6;
+      --ok-soft: #0F2A1F;
+      --bad: #FF8E9B;
+      --bad-soft: #33161C;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #F7F7FA;
+        --surface: #FFFFFF;
+        --surface2: #EFEFF4;
+        --line: #E2E2EA;
+        --fg: #111116;
+        --muted: #6A6978;
+        --accent: #644EE8;
+        --accent-soft: #EBE7FF;
+        --ok: #17935D;
+        --ok-soft: #E3F8ED;
+        --bad: #D83A52;
+        --bad-soft: #FDE8EC;
+      }
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.65;
+      font-size: 15px;
+      padding: 32px 16px 80px;
+      -webkit-font-smoothing: antialiased;
+    }
+    .container {
+      max-width: 780px;
+      margin: 0 auto;
+    }
+    header {
+      margin-bottom: 36px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--line);
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--fg);
+      margin-bottom: 18px;
+    }
+    .brand svg {
+      width: 32px;
+      height: 32px;
+    }
+    .brand-name {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.04em;
+    }
+    h1 {
+      font-size: 32px;
+      letter-spacing: -0.03em;
+      margin-bottom: 8px;
+    }
+    .subtitle {
+      color: var(--muted);
+      font-size: 14.5px;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+    .card.danger-card {
+      border-color: rgba(216, 58, 82, 0.4);
+      background: linear-gradient(180deg, var(--surface) 0%, rgba(216, 58, 82, 0.05) 100%);
+    }
+    h2 {
+      font-size: 20px;
+      letter-spacing: -0.02em;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    h3 {
+      font-size: 16px;
+      margin: 18px 0 8px;
+    }
+    p {
+      color: var(--fg);
+      margin-bottom: 14px;
+    }
+    .muted {
+      color: var(--muted);
+    }
+    .banner {
+      padding: 16px;
+      border-radius: 12px;
+      margin: 16px 0;
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .banner.warn {
+      background: rgba(245, 166, 35, 0.12);
+      border: 1px solid rgba(245, 166, 35, 0.35);
+      color: var(--fg);
+    }
+    .banner.bad {
+      background: var(--bad-soft);
+      border: 1px solid var(--bad);
+      color: var(--fg);
+    }
+    .banner.ok {
+      background: var(--ok-soft);
+      border: 1px solid var(--ok);
+      color: var(--fg);
+    }
+    .channels-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin: 16px 0;
+    }
+    .channel-box {
+      background: var(--surface2);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 16px;
+    }
+    .channel-box b {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--accent);
+      font-size: 14px;
+    }
+    .channel-box p {
+      font-size: 13px;
+      color: var(--muted);
+      margin: 0;
+    }
+    /* Form Styles */
+    .form-group {
+      margin-bottom: 18px;
+    }
+    label {
+      display: block;
+      font-size: 13.5px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    input[type="email"],
+    input[type="password"],
+    input[type="text"] {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: var(--surface2);
+      color: var(--fg);
+      font-family: inherit;
+      font-size: 15px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input:focus {
+      border-color: var(--accent);
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 12px 20px;
+      border-radius: 10px;
+      font-family: inherit;
+      font-size: 14.5px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      text-decoration: none;
+      transition: opacity 0.2s;
+    }
+    .btn:hover {
+      opacity: 0.9;
+    }
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .btn.danger {
+      background: #D83A52;
+      color: #FFFFFF;
+      width: 100%;
+    }
+    .btn.line {
+      background: transparent;
+      border: 1px solid var(--line);
+      color: var(--fg);
+    }
+    /* Table */
+    .table-wrap {
+      overflow-x: auto;
+      margin: 20px 0;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 13.5px;
+    }
+    th, td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+    th {
+      background: var(--surface2);
+      color: var(--fg);
+      font-weight: 600;
+      font-size: 13px;
+    }
+    tr:last-child td {
+      border-bottom: none;
+    }
+    .tag {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 11.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .tag.deleted {
+      background: var(--bad-soft);
+      color: var(--bad);
+      border: 1px solid rgba(216, 58, 82, 0.3);
+    }
+    .tag.anonymized {
+      background: var(--accent-soft);
+      color: var(--accent);
+      border: 1px solid rgba(122, 99, 255, 0.3);
+    }
+    .tag.appended {
+      background: var(--ok-soft);
+      color: var(--ok);
+      border: 1px solid rgba(91, 227, 166, 0.3);
+    }
+    footer {
+      margin-top: 48px;
+      padding-top: 24px;
+      border-top: 1px solid var(--line);
+      font-size: 13px;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    footer a {
+      color: var(--muted);
+      text-decoration: none;
+    }
+    footer a:hover {
+      color: var(--fg);
+    }
+    .footer-links {
+      display: flex;
+      gap: 18px;
+    }
+  </style>
+  <!-- Firebase compat libraries for standalone browser execution -->
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <a href="../" class="brand">
+        <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect width="48" height="48" rx="14" fill="#644EE8"/>
+          <path d="M14 16L24 34L34 16" stroke="white" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M18 23L30 23" stroke="#5BE3A6" stroke-width="3.5" stroke-linecap="round"/>
+        </svg>
+        <span class="brand-name">vastrenix</span>
+      </a>
+      <h1>Delete your account & data</h1>
+      <p class="subtitle">Google Play Data Safety & Statutory Compliance Portal</p>
+    </header>
+
+    <div class="card">
+      <h2>1. Three Ways to Trigger Account Deletion</h2>
+      <p>Vastrenix provides three access points for full account and data removal:</p>
+      
+      <div class="channels-grid">
+        <div class="channel-box">
+          <b>1. In the Web App</b>
+          <p>Go to <strong>More → Account → Delete account</strong>. Opens an in-app confirmation modal, re-authenticates password, requires typing DELETE, and immediately invokes the deletion API.</p>
+        </div>
+        <div class="channel-box">
+          <b>2. Public Website (Here)</b>
+          <p>Use the standalone session-less form below. Meets Google Play requirements for users to permanently remove their account and data without reinstalling the native app.</p>
+        </div>
+        <div class="channel-box">
+          <b>3. By Email</b>
+          <p>Send a request to <strong>contact@vastrenix.com</strong> from your registered email address. Processed within 30 days per statutory privacy policy.</p>
+        </div>
+      </div>
+
+      <div class="banner warn">
+        <div>
+          <strong>Android App Users:</strong> Tapping "Delete account" in the native Android app automatically opens this verified portal (<code style="font-size:12px;background:rgba(0,0,0,0.2);padding:2px 4px;border-radius:4px">https://vastrenix.com/delete-account/</code>) via an origin-locked native bridge message.
+        </div>
+      </div>
+    </div>
+
+    <!-- Standalone Web Form -->
+    <div class="card danger-card">
+      <h2 style="color:var(--bad)">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+        2. Delete Account Confirmation
+      </h2>
+
+      <div class="banner bad">
+        <div>
+          <strong>⚠️ This cannot be undone:</strong>
+          <ul style="margin:8px 0 0 18px;font-size:13.5px;line-height:1.5">
+            <li><strong>For Store Owners:</strong> Your login and your whole store — items, stock, bills, customers, khata, dealers, staff access, and settings — will be deleted for everyone. Remaining paid plan time is not refunded.</li>
+            <li><strong>For Staff Members:</strong> Your login will be deleted and you will lose access to this store. The employer store's data stays with the owner.</li>
+          </ul>
+        </div>
+      </div>
+
+      <form id="deleteForm" onsubmit="handleWebDelete(event)">
+        <div class="form-group">
+          <label for="userEmail">Registered Email Address</label>
+          <input type="email" id="userEmail" required placeholder="owner@store.com" autocomplete="email">
+        </div>
+
+        <div class="form-group">
+          <label for="userPassword">Account Password (Re-Authentication)</label>
+          <input type="password" id="userPassword" required placeholder="•••••••••••••••" autocomplete="current-password">
+        </div>
+
+        <div class="form-group">
+          <label for="confirmDelete">Type DELETE to confirm</label>
+          <input type="text" id="confirmDelete" required placeholder="DELETE" autocomplete="off" autocapitalize="characters">
+        </div>
+
+        <div id="statusBanner" style="display:none" class="banner"></div>
+
+        <button type="submit" id="submitBtn" class="btn danger">
+          Delete permanently (Danger)
+        </button>
+      </form>
+
+      <div style="margin-top:16px;text-align:center">
+        <a href="mailto:contact@vastrenix.com?subject=Account%20Deletion%20Request&body=Please%20delete%20my%20Vastrenix%20account%20associated%20with%20this%20email%20address." class="btn line" style="font-size:13px">
+          Or request deletion via email: contact@vastrenix.com
+        </a>
+      </div>
+    </div>
+
+    <!-- Summary Table -->
+    <div class="card">
+      <h2>3. Summary: What is Kept vs. Deleted</h2>
+      <p class="muted">Per statutory data destruction policies and Indian commercial law:</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Data Type</th>
+              <th>Action Upon Deletion</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Firebase Auth Login</strong></td>
+              <td><span class="tag deleted">Permanently Deleted</span></td>
+              <td>User cannot sign in again.</td>
+            </tr>
+            <tr>
+              <td><strong>User Profile & Mapping</strong></td>
+              <td><span class="tag deleted">Permanently Deleted</span></td>
+              <td>Removed from <code>/users/{uid}</code>.</td>
+            </tr>
+            <tr>
+              <td><strong>Support Tickets</strong></td>
+              <td><span class="tag deleted">Permanently Deleted</span></td>
+              <td>Cleared from <code>/supportRequests</code>.</td>
+            </tr>
+            <tr>
+              <td><strong>Store Data (Owner)</strong></td>
+              <td><span class="tag deleted">Permanently Deleted</span></td>
+              <td>Full recursive deletion of products, variants, bills, Khata, staff, etc.</td>
+            </tr>
+            <tr>
+              <td><strong>Store Code</strong></td>
+              <td><span class="tag deleted">Permanently Deleted</span></td>
+              <td>Removed from <code>/codes/{code}</code> so code cannot be reused.</td>
+            </tr>
+            <tr>
+              <td><strong>Staff Record (Staff)</strong></td>
+              <td><span class="tag deleted">Permanently Deleted</span></td>
+              <td>Access revoked and removed from store's staff list.</td>
+            </tr>
+            <tr>
+              <td><strong>Plan Payment Records</strong></td>
+              <td><span class="tag anonymized">Anonymized & Kept</span></td>
+              <td>Email and store name erased; financial record kept for GST / income tax law.</td>
+            </tr>
+            <tr>
+              <td><strong>Audit Log Entry</strong></td>
+              <td><span class="tag appended">Appended</span></td>
+              <td>Timestamped record that deletion occurred (with email redacted).</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <footer>
+      <div>&copy; 2026 Vastrenix. All rights reserved.</div>
+      <div class="footer-links">
+        <a href="../">Home</a>
+        <a href="../privacy.html">Privacy Policy</a>
+        <a href="mailto:contact@vastrenix.com">Support</a>
+      </div>
+    </footer>
+  </div>
+
+  <script>
+    // Initialize Firebase client for standalone session-less execution
+    const firebaseConfig = {
+      apiKey: 'AIzaSyCz9IXWXsC2pdmvh0Tr4h4Mk6UFLe3hUMk',
+      authDomain: 'vastranix.firebaseapp.com',
+      projectId: 'vastranix',
+      storageBucket: 'vastranix.firebasestorage.app',
+      messagingSenderId: '753186933692',
+      appId: '1:753186933692:android:58fe3fc892d516db39b9b9'
+    };
+    if (typeof firebase !== 'undefined' && !firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig);
+    }
+
+    async function handleWebDelete(e) {
+      e.preventDefault();
+      const statusBanner = document.getElementById('statusBanner');
+      const submitBtn = document.getElementById('submitBtn');
+      const email = document.getElementById('userEmail').value.trim();
+      const password = document.getElementById('userPassword').value;
+      const confirm = document.getElementById('confirmDelete').value.trim().toUpperCase();
+
+      if (confirm !== 'DELETE') {
+        showBanner('Please type DELETE in capital letters to confirm.', 'bad');
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Processing deletion…';
+      showBanner('Authenticating and verifying deletion criteria…', 'warn');
+
+      try {
+        // 1. Authenticate user
+        const userCredential = await firebase.auth().signInWithEmailAndPassword(email, password);
+        const user = userCredential.user;
+        const idToken = await user.getIdToken(true);
+
+        showBanner('Executing statutory data destruction…', 'warn');
+
+        // 2. Call backend deletion API
+        const response = await fetch('/api/account/delete', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + idToken
+          },
+          body: JSON.stringify({ confirm: 'DELETE' })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message || data.error || 'Account deletion failed on server.');
+        }
+
+        // 3. Complete client sign-out
+        await firebase.auth().signOut();
+        document.getElementById('deleteForm').reset();
+        showBanner('Success: ' + (data.message || 'Your account has been deleted. Your data has been removed from Vastrenix.'), 'ok');
+        submitBtn.style.display = 'none';
+
+      } catch (err) {
+        console.error(err);
+        let msg = err.message || 'An error occurred during account deletion.';
+        if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found') {
+          msg = 'Incorrect email or password. Please recheck your credentials.';
+        }
+        showBanner(msg, 'bad');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Delete permanently (Danger)';
+      }
+    }
+
+    function showBanner(text, type) {
+      const banner = document.getElementById('statusBanner');
+      banner.className = 'banner ' + type;
+      banner.innerHTML = '<strong>' + text + '</strong>';
+      banner.style.display = 'block';
+    }
+  </script>
+</body>
+</html>

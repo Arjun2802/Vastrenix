@@ -5,8 +5,8 @@ plugins {
 // ---------------------------------------------------------------------------
 // Version: bump versionCode for every release you upload (Play rejects reused codes).
 // ---------------------------------------------------------------------------
-def appVersionCode = 11
-def appVersionName = "2.1.0"
+def appVersionCode = 13
+def appVersionName = "2.1.2"
 
 // ---------------------------------------------------------------------------
 // Release signing. Never commit the keystore or its passwords.
@@ -24,11 +24,11 @@ def releaseStoreFile = signingValue("storeFile", "VX_KEYSTORE_PATH")
 def hasReleaseSigning = releaseStoreFile != null && file(releaseStoreFile).exists()
 
 android {
-    namespace "com.vastrenix.app"
+    namespace "com.vastrenix.pos"
     compileSdk 36
 
     defaultConfig {
-        applicationId "com.vastrenix.app"
+        applicationId "com.vastrenix.pos"
         minSdk 26
         targetSdk 36
         versionCode appVersionCode

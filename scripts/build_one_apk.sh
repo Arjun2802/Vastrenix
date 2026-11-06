@@ -197,11 +197,11 @@ $BUILD_TOOLS/aapt2 link -o "$BUILD_DIR/unaligned/app-res.apk" \
 
 echo "=== 5. Compiling native Java sources (MainActivity + FileProvider) ==="
 /opt/homebrew/opt/openjdk@17/bin/javac -cp "$PLATFORM" -d "$BUILD_DIR/classes" \
-    dist/android/src/main/java/com/vastrenix/app/MainActivity.java \
-    dist/android/src/main/java/com/vastrenix/app/VastrenixFileProvider.java
+    dist/android/src/main/java/com/vastrenix/pos/MainActivity.java \
+    dist/android/src/main/java/com/vastrenix/pos/VastrenixFileProvider.java
 
 echo "=== 6. Converting bytecode to classes.dex with d8 (min-api 26) ==="
-$BUILD_TOOLS/d8 --output "$BUILD_DIR/dex/" --lib "$PLATFORM" --min-api 26 $BUILD_DIR/classes/com/vastrenix/app/*.class
+$BUILD_TOOLS/d8 --output "$BUILD_DIR/dex/" --lib "$PLATFORM" --min-api 26 $BUILD_DIR/classes/com/vastrenix/pos/*.class
 
 echo "=== 7. Assembling Universal Single APK ==="
 cp "$BUILD_DIR/unaligned/app-res.apk" "$BUILD_DIR/unaligned/app-universal.apk"

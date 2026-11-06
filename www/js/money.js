@@ -5,6 +5,8 @@ var THEMES = [
 ];
 function themeName(id) { var x = THEMES.find(function (z) { return z[0] === id; }) || THEMES[1]; return t('th_' + x[0], x[1]); }
 function paperW(theme) { return theme === 'thermal' ? 302 : 794; }
+/* inv.theme comes from the database: only known theme ids may reach class names */
+function safeTheme(th) { return THEMES.some(function (z) { return z[0] === th; }) ? th : 'modern'; }
 var IVX_CSS = '.ivx{background:#fff;color:#16161C;font-family:Geist,"Noto Sans Devanagari","Noto Sans Gujarati",system-ui,sans-serif;font-size:12px;line-height:1.45;padding:40px 44px;box-sizing:border-box;text-align:left}' +
   '.ivx *{box-sizing:border-box}.ivx b{font-weight:700}.ivx .n{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}' +
   '.ivx .iv-h{display:flex;justify-content:space-between;gap:24px;align-items:flex-start}.ivx .iv-brand{display:flex;gap:12px;align-items:flex-start}.ivx .iv-logo{width:44px;height:44px;border-radius:12px;background:#0E0E12;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;flex-shrink:0}.ivx img.iv-logo{background:transparent!important;object-fit:contain}' +
@@ -28,17 +30,18 @@ var IVX_CSS = '.ivx{background:#fff;color:#16161C;font-family:Geist,"Noto Sans D
   '.th-intl{padding:0}.th-intl .iv-h{background:#2F3A4A;color:#fff;padding:28px 44px}.th-intl .iv-org span,.th-intl .iv-kind{color:#C9D2DE}.th-intl .iv-logo{background:#fff;color:#2F3A4A}.th-intl .iv-body{padding:10px 44px 36px}.th-intl .iv-p{background:#F2F4F7}.th-intl th{color:#2F3A4A;border-bottom:1.5px solid #2F3A4A}.th-intl .iv-tot .g{color:#2F3A4A}';
 function renderInvoice(inv, theme) { var keep = LANG; LANG = 'en'; try { return renderInvoiceEn(inv, theme); } finally { LANG = keep; } }
 function renderInvoiceEn(inv, theme) {
-  var st = storeV(), cfg = st.invoice || {}, th = theme || inv.theme || cfg.theme || 'modern', cn = inv.kind === 'cn';
+  var st = storeV(), cfg = st.invoice || {}, th = safeTheme(theme || inv.theme || cfg.theme || 'modern'), cn = inv.kind === 'cn';
   var pay = inv.pay || {}, cust = inv.cust;
   var kind = cn ? t('iv_cn', 'CREDIT NOTE') : th === 'intl' ? t('iv_commercial', 'COMMERCIAL INVOICE') : t('iv_tax', 'TAX INVOICE');
   var addr = [st.address, st.city].filter(Boolean).join(', ');
-  var logoEl = (cfg.showLogo !== false) ? (st.logo ? '<img class="iv-logo" src="' + esc(st.logo) + '" alt="' + esc(st.name || '') + '" style="width:48px;height:48px;object-fit:contain;border-radius:8px;background:transparent">' : '<div class="iv-logo">' + esc(initials(st.name)) + '</div>') : '';
+  var logoEl = (cfg.showLogo !== false) ? (st.logo ? '<img class="iv-logo" src="' + esc(safeImg(st.logo)) + '" alt="' + esc(st.name || '') + '" style="width:48px;height:48px;object-fit:contain;border-radius:8px;background:transparent">' : '<div class="iv-logo">' + esc(initials(st.name)) + '</div>') : '';
   var head = '<header class="iv-h"><div class="iv-brand">' + logoEl + '<div class="iv-org"><b>' + esc(st.name || '') + '</b>' + (addr ? '<span>' + esc(addr) + '</span>' : '') + '<span>' + esc([st.gstin ? 'GSTIN ' + st.gstin : '', st.phone ? '+91 ' + fmtPhone(st.phone) : ''].filter(Boolean).join(' · ')) + '</span></div></div>' +
     '<div class="iv-meta"><span class="iv-kind">' + esc(kind) + '</span><span class="iv-no">' + esc(inv.no) + '</span><span>' + esc(fmtDY(inv.at) + ', ' + fmtT(inv.at)) + '</span>' + (cn && inv.ref ? '<span>' + esc(t('against_inv', 'Against {no}', { no: inv.ref.no })) + '</span>' : '') + '</div></header>';
   var parties = '<section class="iv-p"><div><small>' + esc(t('iv_billto', 'Bill to')) + '</small><b>' + esc((cust && cust.name) || t('walkin', 'Walk-in customer')) + '</b>' + (cust && cust.phone ? '<span>+91 ' + esc(fmtPhone(cust.phone)) + '</span>' : '') + '</div>' +
     '<div><small>' + esc(t('iv_pos', 'Place of supply')) + '</small><b>' + esc(st.state || st.city || '—') + '</b>' + (th === 'intl' ? '<span>' + esc(t('iv_origin', 'Country of origin: India · Currency: INR')) + '</span>' : '') + '</div>' +
     '<div style="text-align:right"><small>' + esc(cn ? t('iv_refund', 'Refund') : t('iv_payment', 'Payment')) + '</small><b>' + esc(cn ? payName(inv.refund || 'cash') : payName(pay.mode)) + '</b>' + (pay.utr ? '<span>UTR ' + esc(pay.utr) + '</span>' : pay.last4 ? '<span>•••• ' + esc(pay.last4) + '</span>' : '') + '</div></section>';
-  var L = inv.lines || [], rows;
+  /* numeric fields are coerced so a tampered ledger entry can't inject markup through qty/gst */
+  var L = (Array.isArray(inv.lines) ? inv.lines : []).map(function (l) { return Object.assign({}, l, { qty: +l.qty || 0, gst: +l.gst || 0, rate: +l.rate || 0, taxable: +l.taxable || 0, tax: +l.tax || 0, total: +l.total || 0 }); }), rows;
   var hasGst = (+inv.tax > 0) || ((+inv.cgst || 0) + (+inv.sgst || 0) > 0);
   if (th === 'classic') {
     if (hasGst) {
@@ -60,7 +63,7 @@ function renderInvoiceEn(inv, theme) {
     rows = '<table><thead><tr><th>' + esc(t('iv_item', 'Item')) + '</th><th class="n">' + esc(t('qty', 'Qty')) + '</th>' + (th === 'boutique' ? '' : '<th class="n">' + esc(t('iv_rate', 'Rate')) + '</th>') + '<th class="n">' + esc(t('amount', 'Amount')) + '</th></tr></thead><tbody>' + L.map(function (l) {
       var prod = l.productId && D.products && D.products[l.productId];
       var thumb = l.fabricThumbnailImage || (prod && (prod.fabricThumbnailImage || prod.fabricPreviewImage));
-      var thumbHtml = thumb ? '<img src="' + esc(thumb) + '" style="width:28px;height:28px;border-radius:4px;object-fit:cover;vertical-align:middle;margin-right:8px;border:1px solid #DADAE2;display:inline-block;flex-shrink:0" alt="">' : '';
+      var thumbHtml = thumb ? '<img src="' + esc(safeImg(thumb)) + '" style="width:28px;height:28px;border-radius:4px;object-fit:cover;vertical-align:middle;margin-right:8px;border:1px solid #DADAE2;display:inline-block;flex-shrink:0" alt="">' : '';
       return '<tr><td><div style="display:flex;align-items:center">' + thumbHtml + '<div><b style="font-weight:600">' + esc(l.name) + '</b><small style="display:block">' + esc([l.label, th === 'boutique' ? '' : l.sku, (+l.gst > 0 ? 'GST ' + l.gst + '%' : '')].filter(Boolean).join(' · ')) + '</small></div></div></td><td class="n">' + l.qty + '</td>' + (th === 'boutique' ? '' : '<td class="n">' + NF2.format(l.rate) + '</td>') + '<td class="n">' + NF2.format(l.total) + '</td></tr>';
     }).join('') + '</tbody></table>';
   }
@@ -85,17 +88,17 @@ function renderInvoiceEn(inv, theme) {
   var inner = parties + rows + '<section class="iv-s">' + left + totals + '</section>' + slabT + foot;
   return '<div class="ivx th-' + th + '" style="width:' + paperW(th) + 'px">' + head + (th === 'boutique' || th === 'intl' ? '<div class="iv-body">' + inner + '</div>' : inner) + '</div>';
 }
-function paperHtml(inv, theme, fixedW) { var th = theme || inv.theme || 'modern'; return '<div class="paperwrap" data-pw="' + paperW(th) + '"' + (fixedW ? ' data-fixed="' + fixedW + '"' : '') + '>' + renderInvoice(inv, th) + '</div>'; }
+function paperHtml(inv, theme, fixedW) { var th = safeTheme(theme || inv.theme || 'modern'); return '<div class="paperwrap" data-pw="' + paperW(th) + '"' + (fixedW ? ' data-fixed="' + fixedW + '"' : '') + '>' + renderInvoice(inv, th) + '</div>'; }
 function sampleInvoice() { var c = VXC.calcBill([{ qty: 1, rate: 2450, gst: 5 }, { qty: 2, rate: 790, gst: 5 }], { incl: true }); return { no: (storeV().prefix || 'VX') + '-0001', at: Date.now(), kind: 'sale', cust: { name: 'Meera Shah', phone: '9898022145' }, lines: [{ name: 'Chanderi silk kurta', label: 'M · Indigo', sku: 'VX-KUR-0001-M', hsn: '6204', qty: 1, rate: 2450, gst: 5, taxable: c.lines[0].taxable, tax: c.lines[0].tax, total: c.lines[0].total }, { name: 'Cotton palazzo', label: 'L · Rust', sku: 'VX-BOT-0002-L', hsn: '6204', qty: 2, rate: 790, gst: 5, taxable: c.lines[1].taxable, tax: c.lines[1].tax, total: c.lines[1].total }], gross: c.gross, disc: 0, taxable: c.taxable, tax: c.tax, cgst: c.cgst, sgst: c.sgst, round: c.round, total: c.grand, pay: { mode: 'upi', upi: c.grand } }; }
 function themePicker(model) {
   var v = getPath(S, model), inv = sampleInvoice();
   return '<div class="thumbs" role="radiogroup" aria-label="' + esc(t('invoice_theme', 'Invoice theme')) + '">' + THEMES.map(function (th) { var on = v === th[0]; return '<button type="button" role="radio" aria-checked="' + on + '" class="thumb' + (on ? ' on' : '') + '" data-a="set" data-k="' + model + '" data-v="' + th[0] + '"><span class="tv">' + paperHtml(inv, th[0], th[0] === 'thermal' ? 92 : 128) + '</span><span><b>' + esc(t('th_' + th[0], th[1])) + '</b><small>' + esc(t('thd_' + th[0], th[2])) + '</small></span></button>'; }).join('') + '</div>';
 }
-var LIBS = { h2c: ['vendor/html2canvas.min.js', 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js'], pdf: ['vendor/jspdf.umd.min.js', 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'] }, libP = {};
+var LIBS = { h2c: ['vendor/html2canvas.min.js'], pdf: ['vendor/jspdf.umd.min.js'] }, libP = {}; /* bundled only — no third-party CDNs */
 function loadLib(srcs) { if (typeof srcs === 'string') return loadOne(srcs); var p = (window.claude && window.claude.use) ? loadOne(srcs[srcs.length - 1]) : loadOne(srcs[0]); for (var i = 1; i < srcs.length; i++) (function (s) { p = p.catch(function () { return loadOne(s); }); })(srcs[i]); return p; }
 function loadOne(src) { if (libP[src]) return libP[src]; libP[src] = new Promise(function (res, rej) { var s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = function () { delete libP[src]; rej(new Error('load')); }; document.head.appendChild(s); }); return libP[src]; }
 async function invoicePdf(inv, theme) {
-  var th = theme || inv.theme || 'modern';
+  var th = safeTheme(theme || inv.theme || 'modern');
   if (!DL) { toast(t('dl_unavail', 'Downloads aren’t available in this view. Use WhatsApp or copy the invoice text.'), 'bad'); return; }
   S.busy = 'pdf'; schedule();
   try {
@@ -164,7 +167,7 @@ async function saveCsv(name, rows) {
 function subInvoice(sub) {
   var inv = getInv(sub.day, sub.id);
   if (!inv) return ph(t('nav_invoices', 'Invoices'), '', '', 'back') + skelRows(3);
-  var cn = inv.kind === 'cn', pv = sub.theme || inv.theme || 'modern', pay = inv.pay || {};
+  var cn = inv.kind === 'cn', pv = safeTheme(sub.theme || inv.theme || 'modern'), pay = inv.pay || {};
   var ret = inv.ret || {}, canRet = !cn && inv.lines.some(function (l, i) { return !l.custom && l.qty - (+ret[i] || 0) > 0; });
   var status = cn ? pill(t('credit_note', 'Credit note'), '') : pay.mode === 'credit' ? pill(t('on_credit', 'On credit'), 'warn') : pill(t('paid', 'Paid'), 'ok');
   var acts = '<a class="ib" target="_blank" rel="noopener" href="' + esc(waLink(inv.cust && inv.cust.phone, invText(inv))) + '" data-a="noop" aria-label="WhatsApp">' + icon('message', 19) + '</a>' + '<button class="ib" data-a="copyInv" aria-label="' + esc(t('copy_text', 'Copy as text')) + '">' + icon('copy', 18) + '</button>';
@@ -429,5 +432,5 @@ function vReports() {
     '<div class="cols"><section class="card pad stack"><b>' + esc(t('daily_sales', 'Daily sales')) + '</b>' + barChart(chart, 150) + '</section>' +
     '<section class="card pad stack"><b>' + esc(t('pay_mix', 'Payment mix')) + '</b>' + ['cash', 'upi', 'card', 'credit'].map(function (m) { return '<div class="stack sm" style="gap:5px"><div class="between small"><span class="rowx" style="gap:6px">' + icon(payIcon(m), 15) + esc(payName(m)) + '</span><span><b class="num">' + inr(mix[m]) + '</b> <span class="muted">' + Math.round(mix[m] / mixT * 100) + '%</span></span></div><div style="height:8px;border-radius:999px;background:var(--surface2)"><div style="height:8px;border-radius:999px;width:' + (mix[m] / mixT * 100) + '%;background:' + (m === 'credit' ? 'var(--warn-solid)' : m === 'upi' ? 'var(--accent)' : 'var(--strong)') + '"></div></div></div>'; }).join('') + '</section></div>' +
     '<div class="cols"><section class="stack sm"><div class="sect"><h3>' + esc(t('top_items', 'Top garments')) + '</h3></div>' + (topL.length ? '<div class="list">' + topL.map(function (k, i) { return '<div class="li"><span class="ic">' + (i + 1) + '</span><span class="tx"><b>' + esc(k) + '</b><small>' + esc(t('n_units', '{n} units', { n: top[k].q })) + '</small></span><b class="num">' + inr(top[k].v) + '</b></div>'; }).join('') + '</div>' : '<div class="card pad small muted">' + esc(t('no_sales_period', 'No sales in this period')) + '</div>') + '</section>' +
-    '<section class="stack sm"><div class="sect"><h3>' + esc(t('gst_summary', 'GST summary')) + '</h3></div><div class="tbl-wrap"><table class="tbl" style="min-width:0"><thead><tr><th>' + esc(t('iv_gst_rate', 'GST rate')) + '</th><th class="r">' + esc(t('iv_taxable', 'Taxable')) + '</th><th class="r">CGST</th><th class="r">SGST</th></tr></thead><tbody>' + (Object.keys(slabs).length ? Object.keys(slabs).sort().map(function (k) { return '<tr><td>' + k + '%</td><td class="r">' + inr(slabs[k].tv, 1) + '</td><td class="r">' + inr(slabs[k].tx / 2, 1) + '</td><td class="r">' + inr(slabs[k].tx / 2, 1) + '</td></tr>'; }).join('') : '<tr><td colspan="4" class="muted">' + esc(t('no_sales_period', 'No sales in this period')) + '</td></tr>') + '</tbody></table></div><span class="xsmall muted">' + esc(t('gst_note', 'Net of credit notes. Intra-state supply (CGST + SGST).')) + '</span></section></div></div>';
+    '<section class="stack sm"><div class="sect"><h3>' + esc(t('gst_summary', 'GST summary')) + '</h3></div><div class="tbl-wrap"><table class="tbl" style="min-width:0"><thead><tr><th>' + esc(t('iv_gst_rate', 'GST rate')) + '</th><th class="r">' + esc(t('iv_taxable', 'Taxable')) + '</th><th class="r">CGST</th><th class="r">SGST</th></tr></thead><tbody>' + (Object.keys(slabs).length ? Object.keys(slabs).sort().map(function (k) { return '<tr><td>' + esc(k) + '%</td><td class="r">' + inr(slabs[k].tv, 1) + '</td><td class="r">' + inr(slabs[k].tx / 2, 1) + '</td><td class="r">' + inr(slabs[k].tx / 2, 1) + '</td></tr>'; }).join('') : '<tr><td colspan="4" class="muted">' + esc(t('no_sales_period', 'No sales in this period')) + '</td></tr>') + '</tbody></table></div><span class="xsmall muted">' + esc(t('gst_note', 'Net of credit notes. Intra-state supply (CGST + SGST).')) + '</span></section></div></div>';
 }

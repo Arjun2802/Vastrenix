@@ -13,7 +13,7 @@ One codebase runs as an **Android app (APK)**, a **website**, or fully **offline
 | `www/js/config.js` | **Your Firebase keys go here.** Empty = offline, device-only mode. |
 | `www/js/*.js` | App code: `core` (data layer, rendering), `billing`, `stock`, `money`, `network` (dealers, staff, settings), `i18n` (Hindi/Gujarati), `platform` (Firebase login, Android features). |
 | `firestore.rules` | Server-side security: store isolation, staff approval, roles. |
-| `capacitor.config.json` | Android app id/name (`com.vastrenix.app`). |
+| `capacitor.config.json` | Android app id/name (`com.vastrenix.pos`). |
 | `.github/workflows/android.yml` | Builds the APK automatically on GitHub. |
 | `assets/` | App icon and splash screen source images. |
 

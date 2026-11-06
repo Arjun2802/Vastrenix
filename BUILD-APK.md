@@ -75,15 +75,15 @@ GitHub Actions me Play build chahiye to workflow ki build line me `-PvxDistribut
 
 ## Phone par install
 APK WhatsApp/Drive se phone par bhejein → kholein → "Install unknown apps" allow → Install.
-Debug aur release alag apps ki tarah install hote hain (`com.vastrenix.app.debug` vs `com.vastrenix.app`).
+Debug aur release alag apps ki tarah install hote hain (`com.vastrenix.pos.debug` vs `com.vastrenix.pos`).
 
 ## Project details
 | | |
 |---|---|
-| Package | `com.vastrenix.app` |
+| Package | `com.vastrenix.pos` |
 | Min Android | 8.0 (API 26) |
 | Target | Android 16 (API 36) |
 | Build | Gradle 8.11.1 · AGP 8.10.1 · Java 17 |
 | Permissions | sirf Internet + network state |
 | Payments | Razorpay Checkout SDK 1.6.40 (sirf direct APK build me) |
-| Version | 2.1.0 (code 11) |
+| Version | 2.1.1 (code 12) |

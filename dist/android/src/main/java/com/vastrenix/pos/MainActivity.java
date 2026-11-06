@@ -1,4 +1,4 @@
-package com.vastrenix.app;
+package com.vastrenix.pos;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;

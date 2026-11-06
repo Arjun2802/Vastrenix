@@ -71,6 +71,8 @@ var IC = (function () {
     sparkles: ['m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z', 'M5 3v4', 'M19 17v4', 'M3 5h4', 'M17 19h4'],
     sun: [C(12, 12, 4), 'M12 2v2', 'M12 20v2', 'm4.93 4.93 1.41 1.41', 'm17.66 17.66 1.41 1.41', 'M2 12h2', 'M20 12h2', 'm6.34 17.66-1.41 1.41', 'm19.07 4.93-1.41 1.41'],
     moon: ['M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z'],
+    logout: ['m16 17 5-5-5-5', 'M21 12H9', 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4'],
+    upload: ['M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4', 'm17 8-5-5-5 5', 'M12 3v12'],
     zap: ['M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z']
   };
 })();
@@ -91,6 +93,9 @@ function logo(s, dark) {
 
 /* ===================== UTILITIES ===================== */
 var r2 = VXC.r2, dayKey = VXC.dayKey, monthKey = VXC.monthKey;
+/* Only allow image sources we created ourselves (data:image/…, https:, blob:) and escape them for HTML attributes. */
+function safeImg(u) { u = String(u == null ? '' : u).trim(); return /^(data:image\/(png|jpe?g|webp|gif);base64,[a-z0-9+\/=\s]+|https:\/\/[^\s"'<>()\\]+|blob:[^\s"'<>()\\]+)$/i.test(u) ? u : ''; }
+function cssUrl(u) { u = safeImg(u); return u ? '&quot;' + u.replace(/[\s"]/g, '') + '&quot;' : 'none'; }
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 var NF0 = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 });
 var NF2 = new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -174,7 +179,7 @@ function makeLocalDB() {
 var DB = null, USER = null, DL = null;
 var MODE = 'connecting'; // live | local
 var SESSION = uid('s');
-var D = { store: null, subscription: null, counters: null, products: {}, customers: {}, suppliers: {}, dealers: {}, ledger: {}, ledgerOld: {}, shifts: {}, pos: {}, dorders: {}, transfers: {}, held: {}, staff: {}, requests: {}, fabricJobs: {}, loaded: {}, err: {}, sync: 'live', profiles: {} };
+var D = { store: null, subscription: null, counters: null, products: {}, customers: {}, suppliers: {}, dealers: {}, ledger: {}, ledgerOld: {}, shifts: {}, pos: {}, dorders: {}, incomingOrders: {}, outgoingOrders: {}, dealerNotifs: [], transfers: {}, held: {}, staff: {}, requests: {}, fabricJobs: {}, loaded: {}, err: {}, sync: 'live', profiles: {} };
 var ME = { id: null, name: '', avatar: '', isOwner: false, canEdit: false, role: null, gate: 'boot', staffDoc: null, reqDoc: null };
 var S = { route: 'home', sub: null, sheet: null, toasts: [], q: {}, f: {}, ui: {}, busy: null, loc: lsGet('vx-loc') || null, boot: { db: 0, user: 0, data: 0 } };
 
@@ -208,6 +213,118 @@ function watchDoc(key, ref, cb) {
     schedule();
   }, function (e) { D.err[key] = (e && e.code) || 'unavailable'; D.loaded[key] = true; schedule(); }));
 }
+function clean(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
+function currentBusinessId() {
+  return (storeV() && (storeV().ownerId || storeV().id)) || ME.storeId || ME.id || 'store';
+}
+
+function doRef(id) {
+  if (window.FS) return window.FS.doc('dealerOrders/' + id);
+  return DB.doc('dealerOrders/' + id);
+}
+async function freshDO(id) {
+  var s = await doRef(id).get();
+  return s.exists ? clone(s.data()) : null;
+}
+function putDO(id, obj) {
+  return retry(function () { return doRef(id).set(clean(obj)); });
+}
+function patchDO(id, obj) {
+  return retry(function () { return doRef(id).update(clean(obj)); });
+}
+
+function startDealerOrderListeners() {
+  var bid = currentBusinessId();
+  if (!bid) return;
+  stopDealerOrderListeners();
+
+  var col = window.FS ? window.FS.collection('dealerOrders') : DB.collection('dealerOrders');
+  if (!col) return;
+
+  // Real-time listener 1: Incoming Orders (sellerBusinessId == current business)
+  var un1 = col.where('sellerBusinessId', '==', bid).onSnapshot(function (snap) {
+    handleDealerOrderSnapshot(snap, 'incoming');
+  }, function (e) {
+    console.warn('Incoming dealerOrders listener error', e);
+  });
+
+  // Real-time listener 2: Outgoing Orders (buyerBusinessId == current business)
+  var un2 = col.where('buyerBusinessId', '==', bid).onSnapshot(function (snap) {
+    handleDealerOrderSnapshot(snap, 'outgoing');
+  }, function (e) {
+    console.warn('Outgoing dealerOrders listener error', e);
+  });
+
+  S.dealerUnsubs = [un1, un2];
+}
+
+function stopDealerOrderListeners() {
+  if (S.dealerUnsubs && S.dealerUnsubs.length) {
+    S.dealerUnsubs.forEach(function (un) { try { if (typeof un === 'function') un(); } catch (e) {} });
+  }
+  S.dealerUnsubs = [];
+}
+
+function handleDealerOrderSnapshot(snap, type) {
+  if (!D.dorders) D.dorders = {};
+  if (!D.incomingOrders) D.incomingOrders = {};
+  if (!D.outgoingOrders) D.outgoingOrders = {};
+  if (!D.dealerNotifs) D.dealerNotifs = [];
+
+  var initial = !D.loaded.dorders;
+  (snap.docs || []).forEach(function (d) {
+    var o = Object.assign({}, d.data(), { id: d.id });
+    var old = D.dorders[d.id];
+    D.dorders[d.id] = o;
+    if (type === 'incoming') D.incomingOrders[d.id] = o;
+    else D.outgoingOrders[d.id] = o;
+
+    if (!initial && old && old.status !== o.status) {
+      notifyOrderStatusChange(o, old.status, type);
+    } else if (!initial && !old && type === 'incoming' && o.status === 'submitted') {
+      notifyOrderStatusChange(o, null, type);
+    }
+  });
+
+  D.loaded.dorders = true;
+  schedule();
+}
+
+function notifyOrderStatusChange(o, oldStatus, type) {
+  var msg = '', kind = 'acc';
+  var isBuyer = type === 'outgoing';
+  var isSeller = type === 'incoming';
+
+  if (isBuyer) {
+    if (o.status === 'accepted' || o.status === 'partial') {
+      msg = t('notif_do_accepted', 'Order {no} accepted by {s}. Stock reserved.', { no: o.no, s: o.sellerName || 'Seller' });
+      kind = 'acc';
+    } else if (o.status === 'packed') {
+      msg = t('notif_do_packed', 'Order {no} packed by {s}. Ready for dispatch.', { no: o.no, s: o.sellerName || 'Seller' });
+      kind = 'warn';
+    } else if (o.status === 'dispatched') {
+      msg = t('notif_do_dispatched', 'Order {no} dispatched by {s} via {c} · LR {lr}! Tap to confirm receipt.', { no: o.no, s: o.sellerName || 'Seller', c: o.carrier || 'Transporter', lr: o.lr || 'N/A' });
+      kind = 'ok';
+    } else if (o.status === 'rejected') {
+      msg = t('notif_do_rejected', 'Order {no} declined by {s}.', { no: o.no, s: o.sellerName || 'Seller' });
+      kind = 'bad';
+    }
+  } else if (isSeller) {
+    if (o.status === 'submitted' && !oldStatus) {
+      msg = t('notif_do_submitted', 'New order {no} received from {b} ({amt})!', { no: o.no, b: o.buyerName || 'Dealer', amt: inr(o.total) });
+      kind = 'acc';
+    } else if (o.status === 'delivered') {
+      msg = t('notif_do_delivered', 'Buyer {b} confirmed receipt of order {no}.', { no: o.no, b: o.buyerName || 'Buyer' });
+      kind = 'ok';
+    }
+  }
+
+  if (msg) {
+    D.dealerNotifs.unshift({ id: uid('n'), orderId: o.id, msg: msg, at: Date.now(), kind: kind, read: false });
+    toast(msg, kind === 'bad' ? 'bad' : 'ok');
+  }
+}
+
 function startData() {
   if (S.dataStarted) return; S.dataStarted = true;
   watchDoc('subscription', DB.doc('meta/subscription'));
@@ -219,7 +336,7 @@ function startData() {
   watchColl('ledger', DB.collection('ledger').orderBy('day', 'desc').limit(62));
   watchColl('shifts', DB.collection('shifts').orderBy('openAt', 'desc').limit(60));
   watchColl('pos', DB.collection('pos').orderBy('createdAt', 'desc').limit(300));
-  watchColl('dorders', DB.collection('dorders').orderBy('createdAt', 'desc').limit(300));
+  startDealerOrderListeners();
   watchColl('transfers', DB.collection('transfers').orderBy('at', 'desc').limit(150));
   watchColl('held', DB.collection('held'));
   watchColl('fabricJobs', DB.collection('fabricJobs').orderBy('queuedAt', 'desc').limit(100));
@@ -255,7 +372,7 @@ function subState() {
     daysLeft = Math.max(0, Math.ceil((trialEnds - now) / 864e5));
   } else if (s.status === 'active') {
     isExpired = !!(s.expiresAt && now > s.expiresAt);
-  } else if (s.status === 'past_due' || s.status === 'cancelled') {
+  } else if (s.status === 'past_due' || s.status === 'cancelled' || s.status === 'suspended') {
     isExpired = true;
   }
   return {
@@ -273,7 +390,8 @@ function subState() {
 }
 
 window.checkAndConsume3DAllowance = async function (businessId, reqData) {
-  var sid = businessId || (storeV() && storeV().id) || ME.id;
+  /* the store id is the owner's uid (storeV().id is just the doc id 'store') */
+  var sid = (storeV() && storeV().ownerId) || ME.id;
   var sub = subState();
   if (sub.isExpired) {
     return {
@@ -297,7 +415,7 @@ window.checkAndConsume3DAllowance = async function (businessId, reqData) {
     var patchObj = { trialThreeDUsed: newCount, updatedAt: now };
     await patch('meta/subscription', patchObj);
     if (window.FS && sid) {
-      await window.FS.doc('subscriptions/' + sid).set(patchObj, { merge: true });
+      try { await window.FS.doc('subscriptions/' + sid).set(patchObj, { merge: true }); } catch (e) { console.warn('subscription mirror not updated', e); }
     }
     if (D.subscription) {
       D.subscription.trialThreeDUsed = newCount;
@@ -354,6 +472,7 @@ function errText(e) {
   if (e.code === 'busy') return e.message;
   if (e.code === 'quota_exceeded') return t('err_quota', 'Storage is full. Delete old records to add more.');
   if (e.code === 'revoked' || e.code === 'not_granted') return t('err_access', 'Your access to this store changed. Reload the page.');
+  if (e.code === 'permission-denied') return subState().isExpired ? t('err_plan', 'Your plan has ended. Subscribe from More → Subscription to keep saving.') : t('err_perm', 'You don’t have permission for this. Ask the store owner.');
   if (e.code === 'unavailable') return t('err_net', 'Connection problem. Check your internet and try again.');
   return e.message || t('err_generic', 'Something went wrong. Try again.');
 }
@@ -517,6 +636,7 @@ function postRender() {
   });
   document.querySelectorAll('[data-qr]').forEach(fillQR);
   document.querySelectorAll('.paperwrap[data-pw]').forEach(fitPaper);
+  if (window.vxAfterRender) { try { window.vxAfterRender(); } catch (e) { } }
 }
 function fillQR(el) {
   var txt = el.getAttribute('data-qr'); if (el.__qr === txt) return; el.__qr = txt; el.innerHTML = '';
@@ -583,7 +703,7 @@ function stepper(dec, inc, val, label) { return '<span class="step"><button type
 function swatch(p, size) {
   var c = (p.colors && p.colors[0]) || ((p.variants || [])[0] || {}).color || p.name;
   var imgUrl = p.img;
-  var st = 'background-color:' + colorOf(c) + ';' + (imgUrl ? 'background-image:url(' + imgUrl + ');' : '') + (size ? 'width:' + size[0] + 'px;height:' + size[1] + 'px;' : '');
+  var st = 'background-color:' + colorOf(c) + ';' + (imgUrl ? 'background-image:url(' + cssUrl(imgUrl) + ');' : '') + (size ? 'width:' + size[0] + 'px;height:' + size[1] + 'px;' : '');
   return '<span class="sw" style="' + st + '">' + (imgUrl ? '' : icon('shirt', 18)) + '</span>';
 }
 function stockPill(a, mn) { if (a <= 0) return pill(t('out_of_stock', 'Out of stock'), 'bad'); if (a <= (mn == null ? 3 : mn)) return pill(t('n_left', '{n} left', { n: a }), 'bad'); if (a <= (mn == null ? 3 : mn) * 2) return pill(t('n_avail', '{n} available', { n: a }), 'warn'); return pill(t('n_avail', '{n} available', { n: a }), 'ok'); }
@@ -606,5 +726,6 @@ Object.assign(A, {
     var inp = document.getElementById(id);
     if (inp) inp.click();
   },
+  reload: function () { location.reload(); },
   noop: function () { }
 });

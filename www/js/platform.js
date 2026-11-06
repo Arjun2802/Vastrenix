@@ -8,22 +8,27 @@ var FS = null, AUTH = null, FB_USER = null;
 
 function capPlugin(name) { return window.Capacitor && window.Capacitor.Plugins ? window.Capacitor.Plugins[name] : null; }
 
+/* ---- native bridge (Android app) ----
+   The Android shell exposes window.VastrenixNative as an origin-locked message port. It can only save/share a file
+   the app generated, open an allow-listed external link, or tint the system bars. */
+function nativePost(msg) { try { if (window.VastrenixNative && typeof window.VastrenixNative.postMessage === 'function') { window.VastrenixNative.postMessage(JSON.stringify(msg)); return true; } } catch (e) { } return false; }
+function mimeFor(name) { return /\.pdf$/i.test(name) ? 'application/pdf' : /\.csv$/i.test(name) ? 'text/csv' : /\.json$/i.test(name) ? 'application/json' : /\.png$/i.test(name) ? 'image/png' : /\.jpe?g$/i.test(name) ? 'image/jpeg' : 'text/plain'; }
+window.vxNativeUi = function () {
+  var dark = isDarkTheme(), bg = getComputedStyle(document.body).backgroundColor, m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(bg || '');
+  var hex = m ? '#' + [m[1], m[2], m[3]].map(function (x) { return ('0' + (+x).toString(16)).slice(-2); }).join('') : '';
+  nativePost({ cmd: 'ui', dark: dark, bg: hex });
+};
+
 /* ---- file saving outside the Artifact viewer ---- */
 function makeLocalDownloads() {
-  function toBlob(data, name) { if (data instanceof Blob) return data; var type = /\.pdf$/i.test(name) ? 'application/pdf' : /\.csv$/i.test(name) ? 'text/csv' : /\.json$/i.test(name) ? 'application/json' : 'application/octet-stream'; return new Blob([data], { type: type }); }
+  function toBlob(data, name) { if (data instanceof Blob) return data; return new Blob([data], { type: mimeFor(name) }); }
   function b64(blob) { return new Promise(function (res, rej) { var r = new FileReader(); r.onload = function () { res(String(r.result).split(',')[1]); }; r.onerror = rej; r.readAsDataURL(blob); }); }
   return {
     save: async function (req) {
       var blob = toBlob(req.data, req.filename);
       if (window.VastrenixNative) {
-        var base64Data = await b64(blob);
-        if (typeof window.VastrenixNative.savePdfFromBase64 === 'function' && /\.pdf$/i.test(req.filename)) {
-          window.VastrenixNative.savePdfFromBase64(base64Data, req.filename);
-          return { status: 'saved' };
-        } else if (typeof window.VastrenixNative.openPdfFromBase64 === 'function') {
-          window.VastrenixNative.openPdfFromBase64(base64Data, req.filename);
-          return { status: 'saved' };
-        }
+        var ok = nativePost({ cmd: 'saveFile', name: req.filename, mime: mimeFor(req.filename), data: await b64(blob), share: req.share !== false });
+        if (ok) return { status: 'saved' };
       }
       var fsP = capPlugin('Filesystem'), shareP = capPlugin('Share');
       if (IS_NATIVE && fsP) {
@@ -32,7 +37,7 @@ function makeLocalDownloads() {
         return { status: 'saved' };
       }
       var url = URL.createObjectURL(blob), a = document.createElement('a');
-      a.href = url; a.download = req.filename; document.body.appendChild(a); a.click(); a.remove();
+      a.href = url; a.download = req.filename; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove();
       setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
       return { status: 'saved' };
     }
@@ -88,7 +93,7 @@ function makeFirestoreDB(fs, prefix) {
 var FB_VER = '10.14.1';
 function loadFirebaseLibs() {
   var names = ['firebase-app-compat.js', 'firebase-auth-compat.js', 'firebase-firestore-compat.js'];
-  return names.reduce(function (p, n) { return p.then(function () { return loadLib(['vendor/' + n, 'https://www.gstatic.com/firebasejs/' + FB_VER + '/' + n]); }); }, Promise.resolve());
+  return names.reduce(function (p, n) { return p.then(function () { return loadLib(['vendor/' + n]); }); }, Promise.resolve());
 }
 
 /* ---- sign in / join gates ---- */
@@ -106,10 +111,19 @@ function authErr(e) {
   return (e && e.message) || t('err_generic', 'Something went wrong. Try again.');
 }
 function gateLogin() {
+  var delMsg = window.__vxDeletedMessage || '';
+  if (!delMsg && typeof sessionStorage !== 'undefined') {
+    delMsg = sessionStorage.getItem('vx_del_msg') || '';
+    if (delMsg) {
+      try { sessionStorage.removeItem('vx_del_msg'); } catch (e) {}
+      window.__vxDeletedMessage = delMsg;
+    }
+  }
   var f = S.f.login || (S.f.login = { mode: 'in', name: '', email: '', pass: '', show: false, err: '' });
   var up = f.mode === 'up';
   return '<div class="gate"><div class="box">' +
     '<div class="between"><div class="rowx">' + logo(36) + '<b style="font-size:20px;letter-spacing:-.04em">vastrenix</b></div>' + langMini() + '</div>' +
+    (delMsg ? '<div class="banner ok" style="margin-top:16px"><span class="ic ok">' + icon('checkCircle', 18) + '</span><span class="tx"><b>' + esc(delMsg) + '</b></span></div>' : '') +
     '<div class="stack sm" style="padding-top:24px"><h1 style="font-size:30px">' + esc(up ? t('li_up_t', 'Create your account') : t('li_in_t', 'Sign in to your store')) + '</h1><p class="muted">' + esc(up ? t('li_up_b', 'Owners create a store next. Staff join an existing store with its code.') : t('li_in_b', 'Billing, stock and dealer orders — wherever you are.')) + '</p></div>' +
     '<form class="stack" data-form="1">' + (up ? txtF(t('full_name', 'Full name'), 'f.login.name', 'autocomplete="name"') : '') +
     fld(t('email', 'Email'), '<div class="inwrap"><span class="lead">' + icon('mail', 19) + '</span>' + inp('f.login.email', 'type="email" autocomplete="email" inputmode="email"') + '</div>', null, null, 'f-f-login-email') +
@@ -165,24 +179,48 @@ A.createStore = async function () {
 A.joinStore = async function () {
   var f = S.f.join, code = String(f.code || '').trim().toUpperCase(); f.err = '';
   if (!code) { f.err = t('jn_err_code', 'Enter the store code'); schedule(); return; }
+  if (!/^VX-[A-Z0-9]{2,8}-[A-Z0-9]{4}$/.test(code)) { f.err = t('jn_err_none', 'No store has this code. Check it with the owner.'); schedule(); return; }
   S.busy = 'join'; schedule();
   try {
     var s = await FS.doc('codes/' + code).get();
     if (!s.exists) { f.err = t('jn_err_none', 'No store has this code. Check it with the owner.'); }
-    else { var sid = s.data().storeId; await FS.doc('users/' + ME.id).set({ storeId: sid, email: (FB_USER && FB_USER.email) || '', name: ME.name || '' }, { merge: true }); enterStore(sid); }
+    else { var sid = s.data().storeId; await FS.doc('users/' + ME.id).set({ storeId: sid, joinCode: code, email: (FB_USER && FB_USER.email) || '', name: ME.name || '' }, { merge: true }); enterStore(sid); }
   } catch (e) { f.err = errText(e); }
   S.busy = null; schedule();
 };
 A.signOut = async function () { try { await AUTH.signOut(); } catch (e) { } try { location.hash = ''; } catch (e) { } location.reload(); };
-window.VX_onStoreCreated = async function (code, name) { if (!FS || !code) return; try { await FS.doc('codes/' + code).set({ storeId: ME.id, name: name || '' }); } catch (e) { console.warn('code register failed', e); } };
+/* Returns false when the code is already registered to another store, so onboarding can pick a new one
+   (otherwise staff entering this store's code would be sent to whoever registered it first). */
+window.VX_onStoreCreated = async function (code, name) { if (!FS || !code) return true; try { await FS.doc('codes/' + code).set({ storeId: ME.id, name: String(name || '').slice(0, 120) }); return true; } catch (e) { console.warn('code register failed', e); return false; } };
 function vxExtraMore() {
   if (!AUTH) return '';
   var st = storeV();
   return '<section class="stack sm"><div class="sect"><h2>' + esc(t('account', 'Account')) + '</h2></div><div class="card pad stack">' +
     '<div class="between small"><span class="muted">' + esc(t('email', 'Email')) + '</span><b>' + esc((FB_USER && FB_USER.email) || '') + '</b></div>' +
     (st.code ? '<div class="between small"><span class="muted">' + esc(t('store_code', 'Store code')) + '</span><button class="btn soft xs" data-a="copy" data-v="' + esc(st.code) + '">' + icon('copy', 14) + esc(st.code) + '</button></div>' : '') +
-    '<button class="btn danger" data-a="signOut">' + icon('logout', 17) + esc(t('sign_out', 'Sign out')) + '</button></div></section>';
+    '<button class="btn danger" data-a="signOut">' + icon('logout', 17) + esc(t('sign_out', 'Sign out')) + '</button>' +
+    '<div class="between small" style="margin-top:8px;padding-top:12px;border-top:1px solid var(--line)">' +
+      '<span class="muted">' + esc(t('danger_zone', 'Account')) + '</span>' +
+      '<button class="btn ghost xs danger" data-a="askDeleteAccount">' + icon('trash', 14) + esc(t('del_account', 'Delete account')) + '</button>' +
+    '</div>' +
+    '</div></section>';
 }
+
+A.askDeleteAccount = function () {
+  var isNative = !!(window.IS_NATIVE || window.VastrenixNative || (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()));
+  if (isNative) {
+    var url = 'https://vastrenix.com/delete-account/';
+    if (!(window.nativePost && nativePost({ cmd: 'open', url: url }))) {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+    return;
+  }
+  S.f = S.f || {};
+  S.f.delPwd = '';
+  S.f.delConfirm = '';
+  S.f.delErr = '';
+  openSheet('delAcc');
+};
 
 /* ---- store entry after sign-in ---- */
 function enterStore(sid) {
@@ -242,6 +280,8 @@ function nativeSetup() {
   var isNativeAndroid = !!(window.VastrenixNative || (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()));
   if (isNativeAndroid) {
     document.documentElement.classList.add('native');
+    setTimeout(window.vxNativeUi, 0);
+    if (window.matchMedia) { try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function () { window.vxNativeUi(); }); } catch (e) { } }
   }
   var app = capPlugin('App');
   if (app && app.addListener) {
@@ -260,18 +300,14 @@ function nativeSetup() {
     if (!href) return;
     e.preventDefault();
     e.stopPropagation();
-    if (window.VastrenixNative && typeof window.VastrenixNative.openExternalUrl === 'function') {
-      window.VastrenixNative.openExternalUrl(href);
-    } else {
-      window.open(href, '_blank');
-    }
+    if (!nativePost({ cmd: 'open', url: href })) window.open(href, '_blank', 'noopener,noreferrer');
   }, true);
 }
 
 /* ---- start ---- */
 (function startApp() {
   nativeSetup();
-  if (!window.QRCode && !window.qrcode && !(window.claude && window.claude.use)) loadLib(['vendor/qrcode.js', 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js']).then(function () { schedule(); }).catch(function () { });
+  if (!window.QRCode && !window.qrcode && !(window.claude && window.claude.use)) loadLib(['vendor/qrcode.js']).then(function () { schedule(); }).catch(function () { });
   var cfg = window.VX_CONFIG || {};
   var inArtifact = !!(window.claude && window.claude.use);
   if (!inArtifact && cfg.firebase && cfg.firebase.apiKey) { bootFirebase(cfg); return; }

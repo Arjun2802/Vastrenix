@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.vastrenix.app"
+    package="com.vastrenix.pos"
     android:versionCode="7"
     android:versionName="1.0.6">
 
@@ -73,7 +73,7 @@
         <!-- Secure Content Provider for PDF Invoicing & Thermal Printing -->
         <provider
             android:name=".VastrenixFileProvider"
-            android:authorities="com.vastrenix.app.fileprovider"
+            android:authorities="com.vastrenix.pos.fileprovider"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data

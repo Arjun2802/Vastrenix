@@ -3,21 +3,25 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://checkout.razorpay.com; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob: https:; connect-src 'self' https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com https://firebaseinstallations.googleapis.com https://api.razorpay.com https://lumberjack.razorpay.com; frame-src https://*.firebaseapp.com https://api.razorpay.com https://checkout.razorpay.com; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
   <meta name="theme-color" content="#0E0E12">
+  <meta name="color-scheme" content="light dark">
   <meta name="description" content="Vastrenix — POS billing, garment stock, invoices, dues and dealer orders for Indian clothing stores.">
   <title>Vastrenix</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" type="image/png" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@500;600&family=Noto+Sans+Devanagari:wght@400;500;600;700&family=Noto+Sans+Gujarati:wght@400;500;600;700&display=swap">
+  <link rel="preload" href="fonts/geist-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/geist-sans-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="fonts/fonts.css">
   <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
+  <noscript><p style="font:16px system-ui;padding:24px">Vastrenix needs JavaScript to run.</p></noscript>
   <div id="app"></div>
   <div id="layer"></div>
-  <script src="vendor/qrcode.js" onerror="this.remove()"></script>
+  <script src="vendor/qrcode.js"></script>
   <script src="js/config.js"></script>
   <script src="js/calc.js"></script>
   <script src="js/core.js"></script>
