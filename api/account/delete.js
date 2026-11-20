@@ -46,11 +46,64 @@ function parseJsonBody(req) {
   });
 }
 
-module.exports = async function handler(req, res) {
-  // CORS configuration
-  res.setHeader('Access-Control-Allow-Origin', '*');
+// Restrict CORS to authorized Vastrenix domains
+const ALLOWED_ORIGINS = [
+  'https://vastrenix.com',
+  'https://www.vastrenix.com',
+  'https://vastranix.web.app',
+  'https://vastranix.firebaseapp.com',
+  'https://appassets.androidplatform.net',
+  'http://localhost:8080',
+  'http://localhost:3000'
+];
+
+function applyCors(req, res) {
+  const origin = req.headers.origin;
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  } else if (!origin) {
+    res.setHeader('Access-Control-Allow-Origin', 'https://vastrenix.com');
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', 'https://vastrenix.com');
+  }
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Vary', 'Origin');
+}
+
+// In-memory rate limiting (max 5 deletion attempts per 15 min per IP / UID)
+const rateMap = new Map();
+const RATE_WINDOW_MS = 15 * 60 * 1000;
+const MAX_REQUESTS = 5;
+
+function isRateLimited(key) {
+  const now = Date.now();
+  const history = rateMap.get(key) || [];
+  const valid = history.filter(ts => now - ts < RATE_WINDOW_MS);
+  if (valid.length >= MAX_REQUESTS) {
+    return true;
+  }
+  valid.push(now);
+  rateMap.set(key, valid);
+  if (rateMap.size > 2000) {
+    for (const [k, v] of rateMap.entries()) {
+      if (!v.some(ts => now - ts < RATE_WINDOW_MS)) rateMap.delete(k);
+    }
+  }
+  return false;
+}
+
+function getClientIp(req) {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (forwarded) {
+    return String(forwarded).split(',')[0].trim();
+  }
+  return (req.socket && req.socket.remoteAddress) || 'unknown';
+}
+
+module.exports = async function handler(req, res) {
+  // CORS configuration
+  applyCors(req, res);
 
   if (req.method === 'OPTIONS') {
     return res.status(204).end();
@@ -58,6 +111,12 @@ module.exports = async function handler(req, res) {
 
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'method_not_allowed', message: 'POST method required' });
+  }
+
+  // Rate limit by IP
+  const clientIp = getClientIp(req);
+  if (isRateLimited('ip:' + clientIp)) {
+    return res.status(429).json({ error: 'too_many_requests', message: 'Rate limit exceeded. Please wait a few minutes before trying again.' });
   }
 
   // Extract Bearer Token
@@ -76,6 +135,9 @@ module.exports = async function handler(req, res) {
   }
 
   const uid = tok.uid;
+  if (isRateLimited('uid:' + uid)) {
+    return res.status(429).json({ error: 'too_many_requests', message: 'Too many deletion attempts for this account. Please wait a few minutes.' });
+  }
   const body = (req.body && typeof req.body === 'object') ? req.body : await parseJsonBody(req);
 
   // =========================================================================

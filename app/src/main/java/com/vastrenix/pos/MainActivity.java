@@ -187,11 +187,11 @@ public class MainActivity extends ComponentActivity implements PaymentResultWith
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                // Tell the web app this build can take Razorpay payments natively.
+                // Tell the web app this build can take Razorpay payments natively and report version.
                 if (url != null && url.startsWith(APP_ORIGIN + "/")) {
                     boolean play = "play".equals(BuildConfig.DISTRIBUTION);
                     boolean rzp = !play && !BuildConfig.PAYMENT_HOST.isEmpty();
-                    view.evaluateJavascript("window.VX_NATIVE_CAPS={rzp:" + rzp + ",play:" + play + "}", null);
+                    view.evaluateJavascript("window.VX_NATIVE_CAPS={rzp:" + rzp + ",play:" + play + ",versionCode:" + BuildConfig.VERSION_CODE + ",versionName:'" + BuildConfig.VERSION_NAME + "'}", null);
                 }
             }
 
@@ -259,6 +259,9 @@ public class MainActivity extends ComponentActivity implements PaymentResultWith
                     break;
                 case "ui":
                     applySystemBars(m.optBoolean("dark", false), m.optString("bg", ""));
+                    break;
+                case "exitApp":
+                    finishAffinity();
                     break;
                 default:
                     Log.w(TAG, "Unknown bridge command");

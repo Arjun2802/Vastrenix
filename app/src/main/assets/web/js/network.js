@@ -348,6 +348,11 @@ function vSettings() {
 window.uploadStoreLogo = function (input) {
   if (!input || !input.files || !input.files[0]) return;
   var file = input.files[0];
+  if (file.size > 2 * 1024 * 1024) {
+    if (input) input.value = '';
+    toast(t('err_img_2mb', 'Image size exceeds 2MB limit. Please upload an image under 2MB.'), 'bad');
+    return;
+  }
   var reader = new FileReader();
   reader.onload = function (e) {
     var img = new Image();
@@ -573,7 +578,19 @@ A.doDeleteAccount = async function () {
   }
 };
 
-var SHEETS = { checkout: coView, saleDone: doneView, variant: variantSheet, line: lineSheet, custom: customSheet, disc: discSheet, custPick: custPickSheet, held: heldSheet, billTheme: billThemeSheet, pmore: pmoreSheet, count: countSheet, supplier: supplierSheet, supPay: supPaySheet, utr: utrSheet, cn: cnSheet, collect: collectSheet, custEdit: custEditSheet, expense: expenseSheet, cashEntry: cashEntrySheet, dealer: dealerSheet, dispatch: dispatchSheet, rejectDO: rejectSheet, deliverDO: deliverSheet, loc: locSheet, search: searchSheet, alerts: alertsSheet, confirm: confirmSheet, subscribe: subSheet, fabricDrape: fabricDrapeSheet, delAcc: delAccSheet };
+var SHEETS = { checkout: coView, saleDone: doneView, variant: variantSheet, line: lineSheet, custom: customSheet, disc: discSheet, custPick: custPickSheet, held: heldSheet, billTheme: billThemeSheet, pmore: pmoreSheet, count: countSheet, supplier: supplierSheet, supPay: supPaySheet, utr: utrSheet, cn: cnSheet, collect: collectSheet, custEdit: custEditSheet, expense: expenseSheet, cashEntry: cashEntrySheet, dealer: dealerSheet, dispatch: dispatchSheet, rejectDO: rejectSheet, deliverDO: deliverSheet, loc: locSheet, search: searchSheet, alerts: alertsSheet, confirm: confirmSheet, subscribe: subSheet, fabricDrape: fabricDrapeSheet, delAcc: delAccSheet, forceUpdate: forceUpdateSheet };
+function forceUpdateSheet(sh) {
+  var playUrl = sh.url || 'https://play.google.com/store/apps/details?id=com.vastrenix.pos';
+  return '<div class="scrim" style="pointer-events:all"></div><section class="sheet" role="dialog" aria-modal="true" aria-label="' + esc(sh.title || t('update_req_t', 'Update Required')) + '">' +
+    '<div class="sh"><h2>' + esc(sh.title || t('update_req_t', 'Update Required')) + '</h2></div>' +
+    '<div class="sb pad stack" style="text-align:center">' +
+      '<div style="font-size:48px;line-height:1;margin:12px auto">🚀</div>' +
+      '<b style="font-size:18px">' + esc(sh.title || t('update_req_t', 'Update Required')) + '</b>' +
+      '<p style="font-size:14px;color:var(--muted);line-height:1.6">' + esc(sh.msg || t('update_req_b', 'A critical update is required to continue using Vastrenix. Please update to the latest version.')) + '</p>' +
+    '</div>' +
+    '<div class="sf"><a class="btn primary lg block" href="' + esc(playUrl) + '" target="_blank" rel="noopener">' + icon('download', 18) + esc(t('update_now', 'Update Now on Play Store')) + '</a></div>' +
+  '</section>';
+}
 function sheetView() { var f = SHEETS[S.sheet.k]; if (!f) return ''; try { return f(S.sheet) || ''; } catch (e) { console.error(e); return sheetWrap(t('err_render', 'This screen hit a problem.'), '<p class="small muted">' + esc(e.message) + '</p>', ''); } }
 A.sheet = function (d) { var o = {}; Object.keys(d).forEach(function (k) { o[k] = d[k]; }); openSheet(d.k, o); };
 var SUBS = { product: subProduct, pform: subPform, tform: subTform, poform: subPOform, po: subPO, receive: subReceive, supplier: subSupplier, invoice: subInvoice, customer: subCustomer, doform: subDOform, doOutForm: subDOOutgoingForm, dorder: subDO, contact: subContact, about: subAbout, privacy: subPrivacy };
@@ -622,6 +639,27 @@ function planSaving(k) { var ps = plans(), base = ps.monthly; if (k === 'monthly
 function watchBilling() {
   if (S.billWatch || !window.FS) return;
   S.billWatch = window.FS.doc('config/billing').onSnapshot(function (s) { D.billing = s.exists ? s.data() : null; schedule(); }, function () { });
+  watchAppConfig();
+}
+function watchAppConfig() {
+  if (S.appConfigWatch || !window.FS) return;
+  S.appConfigWatch = window.FS.doc('config/app').onSnapshot(function (s) {
+    D.appConfig = s.exists ? s.data() : null;
+    checkAppUpdateRequired();
+  }, function () { });
+}
+function checkAppUpdateRequired() {
+  var cfg = D.appConfig;
+  if (!cfg || !cfg.minVersionCode) return;
+  var caps = window.VX_NATIVE_CAPS;
+  var currentCode = (caps && caps.versionCode) || 14;
+  if (+cfg.minVersionCode > +currentCode) {
+    openSheet('forceUpdate', {
+      title: cfg.updateTitle || t('update_req_t', 'Update Required'),
+      msg: cfg.updateMessage || t('update_req_b', 'A critical update is required to continue using Vastrenix. Please update to the latest version.'),
+      url: cfg.playStoreUrl || 'https://play.google.com/store/apps/details?id=com.vastrenix.pos'
+    });
+  }
 }
 function subReqDoc() { return D.subRequest || null; }
 function watchSubRequest() {
@@ -701,6 +739,84 @@ function subSheet() {
       '<span class="xsmall muted" style="text-align:center;display:block">' + esc(cfg.methods.razorpay ? t('sub_rzp_note', 'Secure payment by Razorpay · UPI, cards, netbanking and wallets · Plan starts instantly') : t('sub_guarantee2', 'Pay by any UPI app · Activated after verification')) + '</span>' +
     '</div>', '<div class="stack sm" style="width:100%">' + foot + '</div>');
 }
+async function sendSubscriptionEmail(info) {
+  try {
+    var u = window.FB_USER || (window.AUTH && window.AUTH.currentUser);
+    var email = (u && u.email) || '';
+    if (!email) return;
+
+    var st = storeV();
+    var cycle = info.cycle || 'monthly';
+    var plan = (typeof plans === 'function' ? plans()[cycle] : null) || PLAN_DEFAULTS[cycle] || {};
+    var planTitle = planName(cycle) + ' (' + plan.days + ' days)';
+    var amtFormatted = inr(info.amount || plan.amount || 699);
+    var isPending = info.status === 'pending' || info.method === 'upi';
+    var expiryStr = info.expiresAt ? fmtDY(info.expiresAt) : 'Pending Verification';
+
+    var payload = {
+      email: email,
+      name: ME.name || st.name || 'Store Owner',
+      storeName: st.name || 'Your Store',
+      storeCode: st.code || '',
+      plan: planTitle,
+      cycle: cycle,
+      amount: info.amount || plan.amount,
+      method: info.method || 'online',
+      paymentId: info.paymentId || info.utr || '',
+      expiresAt: info.expiresAt || null,
+      status: info.status || 'active'
+    };
+
+    try {
+      if (u.getIdToken) {
+        var tok = await u.getIdToken();
+        if (tok) {
+          fetch(billingCfg().apiBase + '/api/subscription/send-receipt', {
+            method: 'POST',
+            credentials: 'omit',
+            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok },
+            body: JSON.stringify(payload)
+          }).catch(function () {});
+        }
+      }
+    } catch (e) {}
+
+    if (window.FS) {
+      var subject = isPending
+        ? 'Vastrenix Subscription Request Received — ' + planTitle + ' (Ref: ' + (info.utr || info.paymentId) + ')'
+        : 'Vastrenix Subscription Confirmed — ' + planTitle + ' Active';
+
+      var html = '<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px;background:#f9f9fb;border-radius:12px;color:#111;">' +
+        '<div style="text-align:center;margin-bottom:24px;"><h1 style="color:#644EE8;margin:0;font-size:26px;">vastrenix</h1><p style="color:#666;font-size:13px;margin:4px 0 0;">Garment POS, Inventory & Dealer Network</p></div>' +
+        '<div style="background:#fff;padding:28px;border-radius:12px;border:1px solid #e2e2ea;">' +
+        '<h2 style="margin:0 0 12px;font-size:20px;color:' + (isPending ? '#E65100' : '#17935D') + ';">' + (isPending ? '⏳ Payment Verification in Progress' : '🎉 Subscription Confirmed & Active!') + '</h2>' +
+        '<p style="font-size:14px;line-height:1.6;color:#444;">Hello <b>' + esc(payload.name) + '</b>,</p>' +
+        '<p style="font-size:14px;line-height:1.6;color:#444;">' + (isPending ? 'We have received your payment submission for the <b>' + esc(planTitle) + '</b> plan. Our team is verifying your UTR reference with the bank.' : 'Thank you for your purchase! Your payment of <b>' + esc(amtFormatted) + '</b> has been received and your subscription plan is now active.') + '</p>' +
+        '<table style="width:100%;border-collapse:collapse;margin:20px 0;font-size:13.5px;">' +
+        '<tr style="border-bottom:1px solid #eee;"><td style="padding:10px 0;color:#666;">Store Name:</td><td style="padding:10px 0;font-weight:600;text-align:right;">' + esc(payload.storeName) + '</td></tr>' +
+        (payload.storeCode ? '<tr style="border-bottom:1px solid #eee;"><td style="padding:10px 0;color:#666;">Store Code:</td><td style="padding:10px 0;font-weight:600;text-align:right;">' + esc(payload.storeCode) + '</td></tr>' : '') +
+        '<tr style="border-bottom:1px solid #eee;"><td style="padding:10px 0;color:#666;">Plan:</td><td style="padding:10px 0;font-weight:600;text-align:right;">' + esc(planTitle) + '</td></tr>' +
+        '<tr style="border-bottom:1px solid #eee;"><td style="padding:10px 0;color:#666;">Amount:</td><td style="padding:10px 0;font-weight:600;text-align:right;">' + esc(amtFormatted) + '</td></tr>' +
+        '<tr style="border-bottom:1px solid #eee;"><td style="padding:10px 0;color:#666;">Payment Ref:</td><td style="padding:10px 0;font-weight:600;text-align:right;">' + esc(payload.paymentId) + '</td></tr>' +
+        '<tr><td style="padding:10px 0;color:#666;">Status / Expiry:</td><td style="padding:10px 0;font-weight:600;text-align:right;color:' + (isPending ? '#E65100' : '#17935D') + ';">' + esc(isPending ? 'Pending Bank Verification' : 'Active until ' + expiryStr) + '</td></tr>' +
+        '</table>' +
+        '<div style="background:#f4f3fe;border:1px solid #e0dcfc;padding:14px;border-radius:8px;font-size:12.5px;color:#3f328a;line-height:1.5;"><b>Active Features:</b> Unlimited Billing, Multi-Location Inventory (Shop + Godown), Customer Khata & Month-End Reminders, Dealer-to-Dealer B2B Orders, and Cloud Backup.</div>' +
+        '<p style="font-size:12.5px;color:#888;margin:24px 0 0;line-height:1.5;">If you have any questions or require an official GST tax invoice, email us at <a href="mailto:contact@vastrenix.com" style="color:#644EE8;">contact@vastrenix.com</a>.</p>' +
+        '</div>' +
+        '<div style="text-align:center;margin-top:20px;font-size:12px;color:#999;">&copy; 2026 Vastrenix. All rights reserved.</div></div>';
+
+      await window.FS.collection('mail').add({
+        to: email,
+        bcc: 'contact@vastrenix.com',
+        message: { subject: subject, html: html },
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    }
+  } catch (err) {
+    console.warn('[Vastrenix] Subscription email notice:', err);
+  }
+}
+
 /* Calls the payment server with the signed-in user's Firebase ID token. */
 async function payApi(path, body) {
   var u = window.FB_USER || (window.AUTH && window.AUTH.currentUser);
@@ -736,6 +852,15 @@ A.payRazorpay = async function () {
             closeSheet();
             if (v.held || !v.expiresAt) toast(t('rzp_held', 'Payment received. Your plan needs a quick check by our team — contact support if it isn’t active soon.'));
             else toast(t('rzp_ok', 'Payment successful. Your plan is active until {d}.', { d: fmtDY(v.expiresAt) }));
+            sendSubscriptionEmail({
+              cycle: cycle,
+              amount: (plans()[cycle] || {}).amount,
+              paymentId: resp.razorpay_payment_id,
+              orderId: resp.razorpay_order_id,
+              method: 'razorpay',
+              expiresAt: v.expiresAt,
+              status: v.held ? 'pending' : 'active'
+            });
           } catch (e) {
             toast(t('rzp_pending', 'Payment received — confirming it. Your plan will update in a minute. If it doesn’t, contact support with your payment ID.'), 'bad');
           }
@@ -759,8 +884,29 @@ async function payInApp(cfg, cycle) {
       window.vxNativePayResult = function (json) { window.vxNativePayResult = null; try { resolve(JSON.parse(json)); } catch (e) { resolve({ status: 'error' }); } };
       if (!nativePost({ cmd: 'rzpPay', apiBase: cfg.webAppUrl, cycle: cycle, token: tok })) { window.vxNativePayResult = null; resolve({ status: 'error', message: t('rzp_update_app', 'Update the app to pay inside it, or pay on the website.') }); }
     });
-    if (r.status === 'success') { closeSheet(); toast(t('rzp_ok', 'Payment successful. Your plan is active until {d}.', { d: fmtDY(r.expiresAt) })); }
-    else if (r.status === 'held') { closeSheet(); toast(t('rzp_held', 'Payment received. Your plan needs a quick check by our team — contact support if it isn’t active soon.')); }
+    if (r.status === 'success') {
+      closeSheet();
+      toast(t('rzp_ok', 'Payment successful. Your plan is active until {d}.', { d: fmtDY(r.expiresAt) }));
+      sendSubscriptionEmail({
+        cycle: cycle,
+        amount: (plans()[cycle] || {}).amount,
+        paymentId: r.paymentId,
+        method: 'razorpay',
+        expiresAt: r.expiresAt,
+        status: 'active'
+      });
+    }
+    else if (r.status === 'held') {
+      closeSheet();
+      toast(t('rzp_held', 'Payment received. Your plan needs a quick check by our team — contact support if it isn’t active soon.'));
+      sendSubscriptionEmail({
+        cycle: cycle,
+        amount: (plans()[cycle] || {}).amount,
+        paymentId: r.paymentId,
+        method: 'razorpay',
+        status: 'pending'
+      });
+    }
     else if (r.status === 'pending') toast(t('rzp_pending', 'Payment received — confirming it. Your plan will update in a minute. If it doesn’t, contact support with your payment ID.'), 'bad');
     else if (r.status !== 'cancelled') toast(r.message || t('rzp_failed_generic', 'Payment failed. Please try again.'), 'bad');
   } catch (e) { toast(errText(e), 'bad'); }
@@ -794,6 +940,14 @@ A.doSubscribe = async function () {
     });
     S.subStep = 'plan';
     toast(t('sub_submitted', 'Payment submitted. We’ll activate your plan once it’s verified.'));
+    sendSubscriptionEmail({
+      cycle: cycle,
+      amount: plan.amount,
+      utr: utr,
+      paymentId: utr,
+      method: 'upi',
+      status: 'pending'
+    });
   } catch (e) {
     toast(errText(e), 'bad');
   }

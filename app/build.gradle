@@ -5,8 +5,8 @@ plugins {
 // ---------------------------------------------------------------------------
 // Version: bump versionCode for every release you upload (Play rejects reused codes).
 // ---------------------------------------------------------------------------
-def appVersionCode = 13
-def appVersionName = "2.1.2"
+def appVersionCode = 15
+def appVersionName = "2.1.4"
 
 // ---------------------------------------------------------------------------
 // Release signing. Never commit the keystore or its passwords.

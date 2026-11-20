@@ -229,6 +229,7 @@ function enterStore(sid) {
   ME.isOwner = sid === ME.id; ME.canEdit = ME.isOwner; ME.gate = 'boot';
   watchDoc('store', DB.doc('meta/store'));
   watchDoc('subscription', DB.doc('meta/subscription'));
+  if (typeof watchAppConfig === 'function') watchAppConfig();
   setTimeout(function () {
     if (!D.loaded.store) {
       D.storeTimeout = true;

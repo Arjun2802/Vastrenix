@@ -674,11 +674,30 @@ function openSub(kind, data) {
 }
 function backSub() { var p = S.sub && S.sub.prev, y = S.sub && S.sub.scroll; S.sub = p || null; schedule(); requestAnimationFrame(function () { window.scrollTo(0, y || 0); }); }
 function go(r) { S.sub = null; S.sheet = null; if (location.hash !== '#' + r) { try { location.hash = r; } catch (e) { } } S.route = r; window.scrollTo(0, 0); schedule(); }
+A.confirmExitApp = function () {
+  if (window.VastrenixNative || (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())) {
+    nativePost({ cmd: 'exitApp' });
+  } else {
+    try { window.close(); } catch (e) {}
+  }
+};
 window.handleAndroidBack = function () {
-  if (S.sheet) { closeSheet(); return true; }
+  if (S.sheet) {
+    if (S.sheet.k === 'forceUpdate') return true; // non-dismissible update prompt
+    closeSheet();
+    return true;
+  }
   if (S.sub) { backSub(); return true; }
   if (S.route && S.route !== 'home') { go('home'); return true; }
-  return false;
+  // On home screen: ask confirmation before exit
+  openSheet('confirm', {
+    title: t('exit_app_title', 'Exit Vastrenix?'),
+    msg: t('exit_app_msg', 'Are you sure you want to exit the application?'),
+    yes: t('exit_app_btn', 'Exit'),
+    act: 'confirmExitApp',
+    danger: true
+  });
+  return true;
 };
 
 /* ===================== COMPONENTS ===================== */

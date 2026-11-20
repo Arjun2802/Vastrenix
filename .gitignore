@@ -10,3 +10,4 @@ key.properties
 captures/
 .externalNativeBuild/
 .cxx/
+AUDIT.md

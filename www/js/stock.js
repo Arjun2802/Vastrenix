@@ -85,7 +85,7 @@ function subPform(sub) {
   var photo = '<div class="rowx">' +
     '<button type="button" class="btn line" style="height:96px;width:84px;flex-direction:column;gap:6px;border-style:dashed;font-size:12px;cursor:pointer" data-a="triggerUpload" data-for="f-pimg">' + icon('camera', 22) + esc(t('photo', 'Photo')) + '</button>' +
     '<input type="file" id="f-pimg" accept="image/*" class="sr" data-change="pickImg">' +
-    (f.img ? '<span class="sw" style="width:84px;height:96px;border-radius:14px;background-image:url(' + cssUrl(f.img) + ')"></span><button class="btn ghost sm" data-a="set" data-k="f.p.img" data-v="">' + esc(t('remove', 'Remove')) + '</button>' : '<span class="small muted" style="max-width:26ch">' + esc(t('photo_hint', 'Optional. Compressed to keep the app fast.')) + '</span>') + '</div>';
+    (f.img ? '<span class="sw" style="width:84px;height:96px;border-radius:14px;background-image:url(' + cssUrl(f.img) + ')"></span><button class="btn ghost sm" data-a="set" data-k="f.p.img" data-v="">' + esc(t('remove', 'Remove')) + '</button>' : '<span class="small muted" style="max-width:26ch">' + esc(t('photo_hint', 'Optional. Max 2MB. Compressed to keep the app fast.')) + '</span>') + '</div>';
   var colors = fld(t('colours', 'Colours'), '<div class="picks">' + f.colors.map(function (c, i) { return '<button type="button" class="pick" data-a="rmColor" data-i="' + i + '"><span style="width:16px;height:16px;border-radius:999px;background:' + colorOf(c) + '"></span>' + esc(c) + '<span class="x">' + icon('x', 13) + '</span></button>'; }).join('') + '</div><div class="rowx"><input class="in grow" id="f-colorIn" data-m="f.p.colorIn" value="' + esc(f.colorIn) + '" placeholder="' + esc(t('colour_ph', 'e.g. Indigo, Rust, Ivory')) + '" data-enter="addColor"><button class="btn line" data-a="addColor">' + esc(t('add', 'Add')) + '</button></div>', t('colour_hint', 'Leave empty for a single-colour garment'));
   var sizes = fld(t('sizes', 'Sizes'), '<div class="picks">' + PRESET_SIZES.concat(f.sizes.filter(function (s) { return PRESET_SIZES.indexOf(s) < 0; })).map(function (s) { var on = f.sizes.indexOf(s) >= 0; return '<button type="button" class="pick' + (on ? ' on' : '') + '" aria-pressed="' + on + '" data-a="togSize" data-v="' + esc(s) + '">' + esc(s) + '</button>'; }).join('') + '</div><div class="rowx"><input class="in grow" id="f-sizeIn" data-m="f.p.sizeIn" value="' + esc(f.sizeIn) + '" placeholder="' + esc(t('size_ph', 'Custom size, e.g. 2-3Y')) + '" data-enter="addSize"><button class="btn line" data-a="addSize">' + esc(t('add', 'Add')) + '</button></div>', null, err.sizes);
   var body = '<div class="cols even"><div class="stack lg"><section class="card pad stack">' + photo + txtF(t('garment_name', 'Garment name'), 'f.p.name', '', null, err.name) +
@@ -105,6 +105,11 @@ A.pickImg = function (d, el) {
   if (!el) el = document.getElementById('f-pimg');
   var file = el && el.files && el.files[0];
   if (!file) return;
+  if (file.size > 2 * 1024 * 1024) {
+    if (el) el.value = '';
+    toast(t('err_img_2mb', 'Cloth image exceeds 2MB limit. Please upload an image under 2MB.'), 'bad');
+    return;
+  }
   var rd = new FileReader();
   rd.onload = function () {
     var img = new Image();
@@ -496,7 +501,7 @@ function fabricDrapeSheet(sh) {
       '<div class="rowx" style="margin-top:8px">' +
         '<button type="button" class="btn line" style="height:80px;width:80px;flex-direction:column;gap:4px;border-style:dashed;font-size:11px;cursor:pointer" data-a="triggerUpload" data-for="f-drape-img">' + icon('camera', 20) + esc(t('photo', 'Photo')) + '</button>' +
         '<input type="file" id="f-drape-img" accept="image/*" class="sr" data-change="pickDrapeImg">' +
-        (f.customImg ? '<span class="sw" style="width:80px;height:80px;border-radius:12px;background-image:url(' + cssUrl(f.customImg) + ');background-size:cover;background-position:center"></span>' : '<span class="small muted" style="max-width:24ch">' + esc(t('photo_hint', 'Fabric roll or flat swatch photo.')) + '</span>') +
+        (f.customImg ? '<span class="sw" style="width:80px;height:80px;border-radius:12px;background-image:url(' + cssUrl(f.customImg) + ');background-size:cover;background-position:center"></span>' : '<span class="small muted" style="max-width:24ch">' + esc(t('photo_hint_drape', 'Fabric swatch photo (Max 2MB).')) + '</span>') +
       '</div>' :
       '<div class="rowx" style="margin-top:8px">' +
         '<span class="sw" style="width:80px;height:80px;border-radius:12px;background-image:url(' + cssUrl(p.img) + ');background-size:cover;background-position:center"></span>' +
@@ -523,6 +528,11 @@ A.pickDrapeImg = function (d, el) {
   if (!el) el = document.getElementById('f-drape-img');
   var file = el && el.files && el.files[0];
   if (!file) return;
+  if (file.size > 2 * 1024 * 1024) {
+    if (el) el.value = '';
+    toast(t('err_img_2mb', 'Cloth image exceeds 2MB limit. Please upload an image under 2MB.'), 'bad');
+    return;
+  }
   var rd = new FileReader();
   rd.onload = function () {
     var img = new Image();

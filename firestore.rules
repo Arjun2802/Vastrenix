@@ -10,29 +10,77 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.storeId;
     }
 
+    function isOwner(sid) {
+      return isAuth() && request.auth.uid == sid;
+    }
+
+    function isStaffMember(sid) {
+      return isAuth() && getUserStoreId() == sid;
+    }
+
     function isStoreMember(sid) {
-      return isAuth() && (
-        request.auth.uid == sid ||
-        getUserStoreId() == sid
-      );
+      return isOwner(sid) || isStaffMember(sid);
     }
 
-    // Per-store collections: accessible only to that store's authorized members
-    match /stores/{sid}/{document=**} {
-      allow read, write: if isStoreMember(sid);
+    // ========================================================
+    // PER-STORE DATA (Tenant-isolated under /stores/{sid})
+    // ========================================================
+    match /stores/{sid} {
+      allow read: if isStoreMember(sid);
+      allow write: if isOwner(sid);
+
+      // Store metadata (settings, store profile, subscription mirror) - Owner only write
+      match /meta/{docId} {
+        allow read: if isStoreMember(sid);
+        allow write: if isOwner(sid);
+      }
+
+      // Staff directory - Owner only write (staff cannot elevate roles or modify other staff)
+      match /staff/{staffUid} {
+        allow read: if isStoreMember(sid);
+        allow write: if isOwner(sid);
+      }
+
+      // Staff join requests - Staff can create their own request; Owner manages/approves
+      match /requests/{reqUid} {
+        allow read: if isStoreMember(sid);
+        allow create: if isAuth() && request.auth.uid == reqUid;
+        allow update, delete: if isOwner(sid) || (isAuth() && request.auth.uid == reqUid);
+      }
+
+      // Operational store data (products, customers, suppliers, dealers, ledger, shifts, pos, transfers, held, fabricJobs)
+      match /{coll}/{docId} {
+        allow read, write: if isStoreMember(sid) && coll != 'meta' && coll != 'staff' && coll != 'requests';
+      }
     }
 
-    // User profile mapping
+    // User profile mapping: users can only read and write their own record
     match /users/{userId} {
-      allow read: if isAuth();
-      allow write: if isAuth() && request.auth.uid == userId;
+      allow read, write: if isAuth() && request.auth.uid == userId;
     }
 
-    // Store codes mapping
+    // Store codes mapping: only store owners can register codes for their store
     match /codes/{code} {
       allow read: if isAuth();
-      allow create: if isAuth();
+      allow create: if isAuth() && request.resource.data.storeId == request.auth.uid;
       allow update, delete: if isAuth() && resource.data.storeId == request.auth.uid;
+    }
+
+    // Subscription mirrors
+    match /subscriptions/{sid} {
+      allow read: if isStoreMember(sid);
+      allow write: if isOwner(sid);
+    }
+
+    // Subscription requests
+    match /subscriptionRequests/{bizId} {
+      allow read, write: if isAuth() && (request.auth.uid == bizId || getUserStoreId() == bizId);
+    }
+
+    // Payment transaction records
+    match /payments/{payId} {
+      allow read: if isAuth() && (resource.data.uid == request.auth.uid || getUserStoreId() == resource.data.uid);
+      allow write: if false; // Server-only writes
     }
 
     // Platform config
@@ -41,15 +89,21 @@ service cloud.firestore {
       allow write: if false; // Server or platform admin only
     }
 
-    // Subscription requests
-    match /subscriptionRequests/{bizId} {
-      allow read, write: if isAuth() && (request.auth.uid == bizId || getUserStoreId() == bizId);
-    }
-
     // Support requests
     match /supportRequests/{docId} {
       allow create: if isAuth();
       allow read, update, delete: if false; // Platform admin only
+    }
+
+    // Outbound transactional email queue
+    match /mail/{mailId} {
+      allow create: if isAuth();
+      allow read, update, delete: if false; // Triggered by extension / backend only
+    }
+
+    // Administrative audit logs: backend only
+    match /adminLog/{docId} {
+      allow read, write: if false;
     }
 
     // ========================================================
